@@ -4,7 +4,7 @@ Plugin Name: FWP+: Sic 'Em (Syndicated Image Capture)
 Plugin URI: http://projects.radgeek.com/feedwordpress/
 Description: A FeedWordPress filter that locally caches images in the feeds you syndicate. Images are stored in your WordPress uploads directory.
 Author: Charles Johnson
-Version: 2011.0912
+Version: 2012.0322
 Author URI: http://projects.radgeek.com
 */
 
@@ -256,6 +256,21 @@ class SicEm {
 			$data['meta']['_syndicated_image_capture'][] = $src['value'];
 		endforeach;
 		
+		$thumb_links = $post->entry->get_links(/*rel=*/ "http://github.com/radgeek/FWPPitchMediaGallery/wiki/thumbnail");
+		if (is_array($thumb_links) and count($thumb_links) > 0) :
+			foreach ($thumb_links as $href) :
+				if (!isset($data['meta']['_syndicated_image_capture'])) :
+					$data['meta']['_syndicated_image_capture'] = array();
+				endif;
+				$data['meta']['_syndicated_image_capture'][] = $href;
+				
+				if (!isset($data['meta']['_syndicated_image_featured'])) :
+					$data['meta']['_syndicated_image_featured'] = array();
+				endif;
+				$data['meta']['_syndicated_image_featured'][] = $href;
+			endforeach;
+		endif;
+		
 		$link_elements = $post->entry->get_links(/*rel=*/ "enclosure");
 		if (is_array($link_elements) and count($link_elements) > 0) :
 			foreach ($link_elements as $href) :
@@ -288,6 +303,8 @@ class SicEm {
 			$this->post = $post;
 			
 			$imgs = get_post_custom_values('_syndicated_image_capture');
+			$featureUrls = get_post_custom_values('_syndicated_image_featured');
+			
 			$source = get_syndication_feed_object($post->ID);
 			$replacements = array();
 
@@ -319,8 +336,13 @@ class SicEm {
 
 						// Set as featured image, if applicable.
 						if (($img_id > 0) and $seekingFeature) :
-							update_post_meta($post->ID, '_thumbnail_id', $img_id);
-							$seekingFeature = false;
+							if (
+								count($featureUrls) == 0 // No featured specified
+								or in_array($img, $featureUrls) // Spec featured
+							) :
+								update_post_meta($post->ID, '_thumbnail_id', $img_id);
+								$seekingFeature = false;
+							endif;
 						endif;
 						
 						$zapit = true;
