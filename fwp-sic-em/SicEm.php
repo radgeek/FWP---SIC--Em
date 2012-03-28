@@ -1,10 +1,10 @@
 <?php
 /*
-Plugin Name: FWP+: Sic 'Em (Syndicated Image Capture)
+Plugin Name: FWP+: SIC 'Em (Syndicated Image Capture)
 Plugin URI: http://projects.radgeek.com/feedwordpress/
 Description: A FeedWordPress filter that locally caches images in the feeds you syndicate. Images are stored in your WordPress uploads directory.
 Author: Charles Johnson
-Version: 2012.0322
+Version: 2012.0327
 Author URI: http://projects.radgeek.com
 */
 
@@ -405,20 +405,35 @@ class SicEm {
 		$success = true; // Innocent until proven guilty
 		
 		if (strlen(trim($post->post_content)) > 0) :
-			// We need to put the cats in post_category to prevent them from
-			// being wiped. Le sigh.
+			// We need to put the cats in post_category to prevent them
+			// from being wiped. Le sigh.
 			$cats = wp_get_post_categories($post->ID);
 			$post->post_category = $cats;
 	
-			// This is a ridiculous fucking kludge necessitated by WordPress
-			// munging authorship meta-data
+			// This is a ridiculous fucking kludge necessitated by
+			// WordPress munging authorship meta-data
 			add_action('_wp_put_post_revision', array($this, 'fix_revision_meta'));
+
+			// Kludge to prevent kses filters from stripping the
+			// content of posts when updating without a logged in
+			// user who has `unfiltered_html` capability.
+			$mungers = array('wp_filter_kses', 'wp_filter_post_kses');
+			$removed = array();
+			foreach ($mungers as $munger) :
+				if (has_filter('content_save_pre', $munger)) :
+					remove_filter('content_save_pre', $munger);
+					$removed[] = $munger;
+				endif;
+			endforeach;
 	
 			$this->post = $post;
 			wp_insert_post($post);
 			
-			// Turn off ridiculous fucking kludge
+			// Turn off ridiculous fucking kludges #1 and #2
 			remove_action('_wp_put_post_revision', array($this, 'fix_revision_meta'));
+			foreach ($removed as $filter) :
+				add_filter('content_save_pre', $filter);
+			endforeach;
 		else :
 			$success = false;
 		endif;
