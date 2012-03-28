@@ -1,10 +1,10 @@
 <?php
 /*
 Plugin Name: FWP+: SIC 'Em (Syndicated Image Capture)
-Plugin URI: http://projects.radgeek.com/feedwordpress/
+Plugin URI: https://github.com/radgeek/FWP---SIC--Em
 Description: A FeedWordPress filter that locally caches images in the feeds you syndicate. Images are stored in your WordPress uploads directory.
 Author: Charles Johnson
-Version: 2012.0327
+Version: 2012.0328
 Author URI: http://projects.radgeek.com
 */
 
@@ -128,6 +128,8 @@ class SicEm {
 			$sicem_mime_blacklist = $page->setting('sicem mime blacklist', NULL);
 			$sicem_mime_blacklist = ((strlen($sicem_mime_blacklist)>0) ? explode("|", $sicem_mime_blacklist) : NULL);
  
+			$sicem_crop_ratio = $page->setting('sicem crop ratio', NULL);
+			$sicem_resize = $page->setting('sicem resize', NULL);
 
 			$stripUncacheableImagesSelector = array(
 			'no' => 'Leave the image in the post with a hotlink to the original image location',
@@ -178,6 +180,12 @@ class SicEm {
 		<div><label>Name: <input type="text" name="sicem_custom_field_name" value="<?php print esc_attr($customFieldName); ?>" size="15" placeholder="custom field name" /></label>
 		<div class="setting-description">Leave blank if you don't need to store the URL.</div></div></td></tr>
 		
+		<tr><th scope="row"><?php _e('Image Size: '); ?></th>
+		<td>
+		<p style="margin-top:0px"><label>Crop to aspect ratio: <input type="text" name="sicem_crop_ratio" value="<?php print esc_attr($sicem_crop_ratio); ?>" placeholder="ex.: 1:1, 2:3, 16:9" /></label></p>
+		<p style="margin-top:0px"><label>Rescale to dimensions: <input type="text" name="sicem_resize" value="<?php print esc_attr($sicem_resize); ?>" placeholder="ex.: 400x300, 400x, x300" /></label></p>
+		</td></tr>
+
 		<tr><th scope="row"><?php _e('Image Filter: '); ?></th>
 		<td><ul class="options">
 		<li><label><input type="checkbox" name="sicem_min_width_use" value="Yes" <?php if (is_numeric($sicem_min_width) and $sicem_min_width > 0) : ?> checked="checked"<?php endif; ?> /> <strong>Width:</strong>  Only cache images</label> that are at least <input type="number" name="sicem_min_width" value="<?php print (int) $sicem_min_width; ?>" min="0" step="10" size="4" /> pixels wide</li>
@@ -216,6 +224,18 @@ class SicEm {
 			$page->update_setting('featured image default', $params['sicem_default_featured_image']);
 			$page->update_setting('sicem custom field', $params['sicem_custom_field_name']);
 			
+			// empty strings mean a null value
+			foreach (array('crop ratio', 'resize') as $key) :
+				$idx = "sicem_" . str_replace(" ", "_", $key);
+				$setting = 'sicem ' . $key;
+
+				if (strlen(trim($params[$idx])) > 0) :
+					$page->update_setting($setting, $params[$idx]);
+				else :
+					$page->update_setting($setting, NULL);
+				endif;
+			endforeach;
+
 			// collapse arrays to strings
 			foreach (array('mime_whitelist', 'mime_blacklist') as $key) :
 				if (is_array($params["sicem_$key"])) :
@@ -320,12 +340,15 @@ class SicEm {
 					");
 					
 					if (!$result) : // Attachment not yet created
-						$img_id = $this->attach_image($img, $post->ID, array(
+						$params = array(
 						"min width" => $source->setting('sicem min width', 'sicem_min_width', 0),
 						"min height" => $source->setting('sicem min height', 'sicem_min_height', 0),
 						"blacklist" => explode("|", $source->setting('sicem mime blacklist', 'sicem_mime_blacklist', NULL)),
 						"whitelist" => explode("|", $source->setting('sicem mime whitelist', 'sicem_mime_whitelist', NULL)),
-						));
+						"crop" => $source->setting('sicem crop ratio', 'sicem_crop_ratio', NULL),
+						"resize" => $source->setting('sicem resize', 'sicem_resize', NULL),
+						);
+						$img_id = $this->attach_image($img, $post->ID, $params);
 					else :
 						$img_id = $result->ID;
 					endif;
@@ -510,6 +533,11 @@ class SicEm {
 	function attach_image ($url, $to, $args = array()) {
 		$attach_id = NULL;
 
+		$p = wp_parse_args($args, array(
+		"crop" => NULL,
+		"resize" => NULL,
+		));
+
 		# Fetch the URI
 		$headers['Connection'] = 'close';
 		$headers['Referer'] = get_permalink($to);
@@ -564,6 +592,15 @@ class SicEm {
 				endif;
 			endif;
 			
+
+			if (!is_null($data) and (!is_null($p['crop']) or !is_null($p['resize']))) :
+				$constrain = $this->constrainimage(/*image=*/ $data, $p['crop'], $p['resize']);
+				if (!is_null($constrain) and !is_null($constrain[0])) :
+					$data = $constrain[0];
+					$mimetype = $constrain[1];
+				endif;
+			endif;
+
 			if (!is_null($data)) :
 				# Create an appropriate filename
 				$filebase = md5($url) . '.' . $this->SicEmMimeToExtension($mimetype);
@@ -626,22 +663,127 @@ class SicEm {
 		return false;
 	}
 	
-	function getimagesize ($value) {
-		global $sicEmRemoteImage;
+	function streamify ($value, $index = 0) {
+		$store = 'sicEmRemoteImages';
+		$protocol = 'sicemvariable';
 
+		// Check whether or not we've registered our URL handler
+		$existed = in_array($protocol, stream_get_wrappers());
+		if (!$existed) :
+			stream_wrapper_register($protocol, "VariableStream");
+		endif;
+	
+		// Now drop the image data into our global
+		if (!isset($GLOBALS[$store])) :
+			$GLOBALS[$store] = array();
+		endif;
+		$GLOBALS[$store][$index] = $value;
+
+		// ... And return the URL we need.
+		return "${protocol}://${store}/${index}";
+	}
+
+	function getimagesize ($value) {
 		$ret = NULL;
 		if (function_exists('getimagesize')) :
-			$existed = in_array("sicemvariable", stream_get_wrappers());
-			if (!$existed) :
-				stream_wrapper_register("sicemvariable", "VariableStream");
-			endif;
-			$sicEmRemoteImage = $value;
-				
-			$ret = getimagesize("sicemvariable://sicEmRemoteImage");
-				
+			$ret = getimagesize($this->streamify($value, __METHOD__));
 		endif;
 		return $ret;
 	}
+
+	/**
+	 * SicEm::constrainimage() - a GD library-based crop and resize utility function
+	 *
+	 * Props to Alix Axel and monowerker at <http://stackoverflow.com/questions/999250/php-gd-cropping-and-resizing-images>
+	 * for some nice packaging of the code to do this with only the GD library functions.
+	 */
+	function constrainimage ($value, $crop = null, $size = null) {
+		global $sicEmRemoteImage;
+
+		$ret = NULL;
+		if (function_exists('ImageCreateFromString')) :
+			$image = ImageCreateFromString($value);
+			$data = NULL; $mimetype = NULL;
+			if (is_resource($image) === true) :
+				$x = 0;
+				$y = 0;
+				$width = imagesx($image);
+				$height = imagesy($image);
+
+				/*
+				CROP (Aspect Ratio) Section
+				*/
+
+				if (is_null($crop) === true) :
+					$crop = array($width, $height);
+				else :
+					$crop = array_filter(explode(':', $crop));
+
+					if (empty($crop) === true) :
+						$crop = array($width, $height);
+					else :
+						if ((empty($crop[0]) === true) || (is_numeric($crop[0]) === false)) :
+							$crop[0] = $crop[1];
+						elseif ((empty($crop[1]) === true) || (is_numeric($crop[1]) === false)) :
+							$crop[1] = $crop[0];
+						endif;
+					endif;
+
+					$ratio = array(0 => $width / $height, 1 => $crop[0] / $crop[1]);
+
+					if ($ratio[0] > $ratio[1]) :
+						$width = $height * $ratio[1];
+						$x = (imagesx($image) - $width) / 2;
+					elseif ($ratio[0] < $ratio[1]) :
+						$height = $width / $ratio[1];
+						$y = (imagesy($image) - $height) / 2;
+					endif;
+				endif;
+
+				/*
+				Resize Section
+				*/
+
+				if (is_null($size) === true) :
+					$size = array($width, $height);
+				else :
+					$size = array_filter(explode('x', $size));
+
+					if (empty($size) === true) :
+						$size = array(imagesx($image), imagesy($image));
+					else :
+						if ((empty($size[0]) === true) || (is_numeric($size[0]) === false)) :
+							$size[0] = round($size[1] * $width / $height);
+						elseif ((empty($size[1]) === true) || (is_numeric($size[1]) === false)) :
+							$size[1] = round($size[0] * $height / $width);
+						endif;
+					endif;
+				endif;
+
+				$result = ImageCreateTrueColor($size[0], $size[1]);
+
+				if (is_resource($result) === true) :
+					ImageSaveAlpha($result, true);
+					ImageAlphaBlending($result, true);
+					ImageFill($result, 0, 0, ImageColorAllocate($result, 255, 255, 255));
+					ImageCopyResampled($result, $image, 0, 0, $x, $y, $size[0], $size[1], $width, $height);
+
+					ImageInterlace($result, true);
+
+					ob_start(); // *sigh*
+					ImageJPEG($result, null, 90);
+					$mimetype = 'image/jpeg';
+					$data = ob_get_clean(); // *sigh*
+				endif;
+
+			endif; // (is_resource($image) === true)
+			
+			$ret = array($data, $mimetype);
+		endif; // function_exists('ImageCreateFromString')
+
+		return $ret;
+	} /* constrainimage () */
+
 	
 	function fix_async_upload_image() {
 		if (isset($_REQUEST['attachment_id'])) {
@@ -756,79 +898,150 @@ EOJSON;
  * http://www.php.net/manual/en/stream.streamwrapper.example-1.php
  */
 class VariableStream {
-    var $position;
-    var $varname;
+	var $position;
+	var $varname;
+	var $index;
 
-    function stream_open($path, $mode, $options, &$opened_path)
-    {
-        $url = parse_url($path);
-        $this->varname = $url["host"];
-        $this->position = 0;
+	function stream_open($path, $mode, $options, &$opened_path)
+	{
+		$url = parse_url($path);
+		$this->varname = $url["host"];
+		$this->position = 0;
 
-        return true;
-    }
+		if (preg_match('|^/(.*)$|', $url['path'], $ref)) :
+			$this->index = $ref[1];
+		else :
+			$this->index = NULL;
+		endif;
 
-    function stream_read($count)
-    {
-        $ret = substr($GLOBALS[$this->varname], $this->position, $count);
-        $this->position += strlen($ret);
-        return $ret;
-    }
+		return true;
+	}
 
-    function stream_write($data)
-    {
-        $left = substr($GLOBALS[$this->varname], 0, $this->position);
-        $right = substr($GLOBALS[$this->varname], $this->position + strlen($data));
-        $GLOBALS[$this->varname] = $left . $data . $right;
-        $this->position += strlen($data);
-        return strlen($data);
-    }
+	function &globalVar () {
+		if (!is_null($this->index)) :
+			return $GLOBALS[$this->varname][$this->index];
+		else :
+			return $GLOBALS[$this->varname];
+		endif;
+	} /* VariableStream::globalVar () */
 
-    function stream_tell()
-    {
-        return $this->position;
-    }
+	function stream_read ($count) {
+		$ret = substr($this->globalVar(), $this->position, $count);
+        	$this->position += strlen($ret);
+		return $ret;
+	}
 
-    function stream_eof()
-    {
-        return $this->position >= strlen($GLOBALS[$this->varname]);
-    }
+	function stream_write ($data) {
+		$g = $this->globalVar();
+		$left = substr($g, 0, $this->position);
+		$right = substr($g, $this->position + strlen($data));
+		$g = $left . $data . $right;
+		$this->position += strlen($data);
+		return strlen($data);
+	}
 
-    function stream_seek($offset, $whence)
-    {
-        switch ($whence) {
-            case SEEK_SET:
-                if ($offset < strlen($GLOBALS[$this->varname]) && $offset >= 0) {
-                     $this->position = $offset;
-                     return true;
-                } else {
-                     return false;
-                }
-                break;
+	function stream_tell () {
+		return $this->position;
+	}
 
-            case SEEK_CUR:
-                if ($offset >= 0) {
-                     $this->position += $offset;
-                     return true;
-                } else {
-                     return false;
-                }
-                break;
+	function stream_eof () {
+		return $this->position >= strlen($this->globalVar());
+	}
 
-            case SEEK_END:
-                if (strlen($GLOBALS[$this->varname]) + $offset >= 0) {
-                     $this->position = strlen($GLOBALS[$this->varname]) + $offset;
-                     return true;
-                } else {
-                     return false;
-                }
-                break;
+	function stream_seek ($offset, $whence) {
+		switch ($whence) {
+		case SEEK_SET:
+			if ($offset < strlen($this->globalVar()) && $offset >= 0) {
+				$this->position = $offset;
+				return true;
+			} else {
+				return false;
+			}
+			break;
 
-            default:
-                return false;
-        }
-    }
+		case SEEK_CUR:
+			if ($offset >= 0) {
+				$this->position += $offset;
+				return true;
+			} else {
+				return false;
+			}
+			break;
+
+		case SEEK_END:
+			if (strlen($GLOBALS[$this->varname]) + $offset >= 0) {
+				$this->position = strlen($GLOBALS[$this->varname]) + $offset;
+				return true;
+			} else {
+				return false;
+			}
+			break;
+
+		default:
+                	return false;
+		}
+	}
+
+	function stream_stat () {
+		return array(
+		"dev" => 0,
+		"ino" => 0,
+		"mode" => 0,
+		"nlink" => 1,
+		"uid" => 0,
+		"gid" => 0,
+		"rdev" => 0,
+		"size" => strlen($this->globalVar()),
+		"atime" => 0,
+		"mtime" => 0,
+		"ctime" => 0,
+		"blksize" => -1,
+		"blocks" => -1,
+		);
+	}
 } /* class VariableStream */
 
 $sicEmAddOn = new SicEm;
+
+if (isset($_GET['debug']) and $_GET['debug']=='variablestream') :
+	$varname = $_GET['varname'];
+	$index = $_GET['index'];
+
+	$existed = in_array("sicemvariable", stream_get_wrappers());
+	if (!$existed) :
+		stream_wrapper_register("sicemvariable", "VariableStream");
+	endif;
+	
+	global $sicEmRemoteImage;
+
+	$url = 'sicemvariable://'.$varname;
+	if (!is_null($index)) :
+		$GLOBALS[$varname][$index] = $_GET['value'];
+		$url .= '/'.$index;
+	else :
+		$GLOBALS[$varname] = $_GET['value'];
+	endif;
+
+	header("Content-type: text/plain");
+	echo "URL: "; var_dump($url);
+	echo "CONTENTS: "; var_dump(file_get_contents($url));
+	echo "GLOBALS ENTRY: "; var_dump($GLOBALS[$varname]);
+	exit;
+endif;
+
+if (isset($_GET['debug']) and $_GET['debug']=='sicemcrop') :
+	$url = $_GET['url'];
+	$ratio = $_GET['ratio'];
+	$xy = $_GET['xy'];
+
+	$jpeg = $sicEmAddOn->constrainimage(file_get_contents($url), $ratio, $xy);
+	if (is_string($jpeg[1])) :
+		header("Content-type: ".$jpeg[1]);
+		echo $jpeg[0];
+	else :
+		header("Content-type: text/plain");
+		var_dump($jpeg);
+	endif;
+	exit;
+endif;
 
