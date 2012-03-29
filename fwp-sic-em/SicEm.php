@@ -55,6 +55,7 @@ class SicEm {
 	
 	function diagnostics ($diag, $page) {
 		$diag['Syndicated Image Cacher']['sicem:capture'] = 'as syndicated images are captured or rejected for local copies';
+		$diag['Syndicated Image Cacher']['sicem:capture:error'] = 'when there is an error encountered when trying to capture a local copy of an image'; 
 		$diag['Syndicated Image Cacher']['sicem:capture:http'] = 'as the HTTP GET request is sent to capture a local copy of a syndicated image';
 		$diag['Syndicated Image Cacher']['sicem:capture:reject'] = 'when a captured image is rejected instead of being kept as a local copy';
 		return $diag;
@@ -75,8 +76,8 @@ class SicEm {
 			$uploadUrl = $upload['url'] . '/' . md5('http://example.com/example.jpg') . '.jpg';
 
 			$cacheImagesSelector = array(
-			"no" => "The original URL<div class=\"setting-description\">Ex.: <code>%s</code></div>",
-			"yes" => "A local copy of the image on this website<div class=\"setting-description\">Ex.: <code>%s</code></div>",
+			"no" => "Hotlink the image at its original URL<div class=\"setting-description\">Ex.: <code>&lt;img src=&quot;%s&quot;&gt;</code></div>",
+			"yes" => "Capture a copy of the image on this website and use the local copy<div class=\"setting-description\">Ex.: <code>&lt;img src=&quot;%s&quot;&gt;</code></div>",
 			);
 
 			$urls = array(
@@ -99,7 +100,7 @@ class SicEm {
 			);
 			
 			$featureImagesSelector = array(
-			"no" => __("Just display the image normally"),
+			"no" => __("Just display the image"),
 			"yes" => __("Use the image as the Featured Image for the syndicated post"),
 			);
 			
@@ -150,7 +151,7 @@ class SicEm {
 
 		<table class="edit-form narrow">
 		<tr><th scope="row"><?php _e('Capture images:'); ?></th>
-		<td><p>If a syndicated post includes an image located at <code>http://example.com/example.jpg</code>, the image tag in the syndicated post should refer to...</p>
+		<td><p>If a syndicated post includes an image located at <code>http://example.com/example.jpg</code>, FeedWordPress should...</p>
 		<?php
 			$page->setting_radio_control(
 				'cache images', 'cache_images',
@@ -553,10 +554,16 @@ class SicEm {
 		endif;
 		
 		FeedWordPress::diagnostic('sicem:capture:http', "HTTP &raquo;&raquo; GET [$url]");
-		$http = wp_remote_request($url, array(
+
+		$params = apply_filters('sicem_remote_request_params', array(
 			'headers' => $headers,
 			'timeout' => $timeout,
-		));
+		), $url);
+	
+		$http = apply_filters('sicem_remote_request', NULL, $url, $params);
+		if (is_null($http)) :
+			$http = wp_remote_request($url, $params);
+		endif;
 
 		if (
 			!is_wp_error($http)
@@ -623,10 +630,38 @@ class SicEm {
 					$attach_data = wp_generate_attachment_metadata($attach_id, $up['file']);
 	
 					wp_update_attachment_metadata($attach_id, $attach_data);
+				else :
+					if (is_array($up) and isset($up['error'])) :
+						$error_message = $up['error'];
+					else :
+						$error_message = preg_replace('/\s+/', " ", FeedWordPress::val($up));
+					endif;
+
+					FeedWordPress::diagnostic('sicem:capture:error',
+						"Failed image storage [$url]: $error_message"
+					);
 				endif;
 			else :
 				$attach_id = -1; // Filtered
 			endif;
+		else :
+			if (is_object($http) and method_exists($http, 'get_error_messages')) :
+				$error_message = preg_replace('/\s+/', " ", "WP_Error: ".implode(" / ", $http->get_error_messages()));
+			elseif (is_array($http) and isset($http['response'])) :
+				$code = $http['response']['code'];
+				$mesg = $http['response']['message'];
+				$pcode = preg_replace('/\s+/', '\s+', preg_quote($code)); $pmesg = preg_replace('/\s+/', '\s+', preg_quote($mesg));
+				$pattern = ":<([^>]+)> \s* ($pcode\s*)? $pmesg \s*</\\1>:ix";
+				$stripped_body = strip_tags(preg_replace($pattern, '', $http['body']));
+				$len = 66;
+				$error_message = preg_replace('/\s+/', " ", "${code} ${mesg}: ".substr(
+					$stripped_body, 0, $len
+				) . ((strlen($stripped_body) > $len) ? "&hellip;" : ''));
+			else :
+				$error_message = preg_replace('/\s+/', " ", FeedWordPress::val($http));
+			endif;
+
+			FeedWordPress::diagnostic('sicem:capture:error', "Failed GET [$url] &laquo;&laquo; ".$error_message);
 		endif;
 		return $attach_id;
 	}
@@ -1002,46 +1037,4 @@ class VariableStream {
 } /* class VariableStream */
 
 $sicEmAddOn = new SicEm;
-
-if (isset($_GET['debug']) and $_GET['debug']=='variablestream') :
-	$varname = $_GET['varname'];
-	$index = $_GET['index'];
-
-	$existed = in_array("sicemvariable", stream_get_wrappers());
-	if (!$existed) :
-		stream_wrapper_register("sicemvariable", "VariableStream");
-	endif;
-	
-	global $sicEmRemoteImage;
-
-	$url = 'sicemvariable://'.$varname;
-	if (!is_null($index)) :
-		$GLOBALS[$varname][$index] = $_GET['value'];
-		$url .= '/'.$index;
-	else :
-		$GLOBALS[$varname] = $_GET['value'];
-	endif;
-
-	header("Content-type: text/plain");
-	echo "URL: "; var_dump($url);
-	echo "CONTENTS: "; var_dump(file_get_contents($url));
-	echo "GLOBALS ENTRY: "; var_dump($GLOBALS[$varname]);
-	exit;
-endif;
-
-if (isset($_GET['debug']) and $_GET['debug']=='sicemcrop') :
-	$url = $_GET['url'];
-	$ratio = $_GET['ratio'];
-	$xy = $_GET['xy'];
-
-	$jpeg = $sicEmAddOn->constrainimage(file_get_contents($url), $ratio, $xy);
-	if (is_string($jpeg[1])) :
-		header("Content-type: ".$jpeg[1]);
-		echo $jpeg[0];
-	else :
-		header("Content-type: text/plain");
-		var_dump($jpeg);
-	endif;
-	exit;
-endif;
 
