@@ -366,6 +366,13 @@ class SicEm {
 			endforeach;
 		endif;
 
+		$enclosures = $post->entry->get_enclosures();
+		if (is_array($enclosures) and count($enclosures) > 0) :
+			foreach ($enclosures as $enclosure) :
+				$data['meta']['_syndicated_image_capture'][] = $enclosure->get_link();
+			endforeach;
+		endif;
+		
 		$thumb_id = $post->link->setting('featured image default', 'featured_image_default', NULL);
 		if ($thumb_id) :
 			$data['meta']['_thumbnail_id'] = $thumb_id;
