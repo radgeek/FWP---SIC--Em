@@ -35,6 +35,9 @@ class SicEm {
 		add_action('feedwordpress_admin_page_posts_save', array(&$this, 'save_settings'), 10, 2);
 		add_filter('feedwordpress_diagnostics', array(&$this, 'diagnostics'), 10, 2);
 		
+		// If user opts for it, put a gallery at the end of syndicated posts
+		add_filter('the_content', array(&$this, 'the_content'), 200000, 2);
+		
 		global $pagenow;
 		global $sicem_path;
 		if (WP_ADMIN) : // set up image picker through massive fuckery
@@ -113,6 +116,19 @@ class SicEm {
 			'default-input-value' => 'default',
 			);
 			
+			$insertGallerySelector = array(
+			"no" => __("<em>Leave it alone.</em> Just show the post as it appeared on the feed"),
+			"before" => __("<em>Gallery above post.</em> Insert a gallery of attached images at the top of syndicated posts."),
+			"after" => __("<em>Gallery below post.</em> Insert a gallery of attached images at the bottom of syndicated posts."),
+			);
+
+			$igsParams = array(
+			'input-name' => 'sicem_insert_gallery',
+			'setting-default' => NULL,
+			'global-setting-default' => 'no',
+			'default-input-value' => 'default',
+			);
+			
 			$globalDefaultFeaturedImage = get_option('feedwordpress_featured_image_default', NULL);
 			if ($page->for_feed_settings()) :
 				$defaultFeaturedImage = $page->link->setting('featured image default', 'featured_image_default', NULL);
@@ -183,6 +199,14 @@ class SicEm {
 		<div><label>Name: <input type="text" name="sicem_custom_field_name" value="<?php print esc_attr($customFieldName); ?>" size="15" placeholder="custom field name" /></label>
 		<div class="setting-description">Leave blank if you don't need to store the URL.</div></div></td></tr>
 		
+		<tr><th scope="row"><?php _e('Display Image Gallery with Post:'); ?></th>
+		<td><p style="margin-top:0px">When WordPress displays a syndicated post with captured images attached to it...</p>
+		<?php
+			$page->setting_radio_control(
+				'sicem insert gallery', 'sicem_insert_gallery',
+				$insertGallerySelector, $igsParams);
+		?></td></tr>
+
 		<tr><th scope="row"><?php _e('Image Size: '); ?></th>
 		<td>
 <?php
@@ -236,6 +260,7 @@ class SicEm {
 			$page->update_setting('feature captured images', $params['sicem_feature_images']);
 			$page->update_setting('featured image default', $params['sicem_default_featured_image']);
 			$page->update_setting('sicem custom field', $params['sicem_custom_field_name']);
+			$page->update_setting('sicem insert gallery', $params['sicem_insert_gallery']);
 			
 			// empty strings mean a null value
 			foreach (array('crop ratio', 'resize') as $key) :
@@ -276,6 +301,33 @@ class SicEm {
 	// FUNCTIONALITY ///////////////////////////////////////////////////////////
 	////////////////////////////////////////////////////////////////////////////
 	var $post;
+
+	function the_content ($content) {
+		global $post;
+		
+		if (function_exists('is_syndicated')) :
+			if (is_syndicated()) :
+				$source = get_syndication_feed_object($post->ID);
+				$ig = $source->setting('sicem insert gallery', 'sicem_insert_gallery', 'no');
+				switch ($ig) :
+				case 'before' :
+					$content = do_shortcode('[gallery]')."\n\n".$content;
+					break;
+				case 'after' :
+					$content = $content."\n\n".do_shortcode('[gallery]');
+					break;
+					
+				// Leave it.
+				case 'no' :
+				default :
+					// NOOP
+				endswitch;
+			endif;
+		endif;
+		
+		return $content;
+	}
+
 	function process_post ($data, $post) {
 		$img_src = FeedWordPressHTML::attributeRegex('img', 'src');
 		
