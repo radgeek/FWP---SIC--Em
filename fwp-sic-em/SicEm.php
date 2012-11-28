@@ -8,6 +8,8 @@ Version: 2012.0328
 Author URI: http://projects.radgeek.com
 */
 
+require_once(dirname(__FILE__).'/sicwebimage.class.php');
+
 // Get the path relative to the plugins directory in which FWP is stored
 preg_match (
 	'|'.preg_quote(WP_PLUGIN_DIR).'/(.+)$|',
@@ -333,8 +335,10 @@ class SicEm {
 				$seekingFeature = ('yes' == $source->setting('feature captured images', 'feature_captured_images', NULL));
 				$customFieldName = trim($source->setting('sicem custom field', 'sicem_custom_field', ''));
 				foreach ($imgs as $img) :
-					$imgGuid = $this->guid($img);
+					
+					$imgGuid = SICWebImage::guid($img);
 					$guid = $wpdb->escape($imgGuid);
+					
 					$result = $wpdb->get_row("
 					SELECT ID FROM $wpdb->posts
 					WHERE guid='$guid' AND post_type='attachment'
@@ -478,59 +482,6 @@ class SicEm {
 		");
 	} /* SicEm::fix_revision_meta () */
 	
-	function SicEmMimeToExtension ($mimetype) {
-		# This is the inverse, slightly modified, of the array from extensions
-		# to mimetypes found in WordPress 2.1's functions.php. We need this to
-		# select an appropriate extension for cached images.
-		$mimes = array (
-			'image/jpeg' => 'jpg',
-			'image/gif' => 'gif',
-			'image/png' => 'png',
-			'image/bmp' => 'bmp',
-			'image/tiff' => 'tif',
-			'image/x-icon' => 'ico',
-			'video/asf' => 'asf',
-			'video/avi' => 'avi',
-			'video/quicktime' => 'mov',
-			'video/mpeg' => 'mpeg',
-			'text/plain' => 'txt',
-			'text/richtext' => 'rtx',
-			'text/css' => 'css',
-			'text/html' => 'html',
-			'audio/mpeg' => 'mp3',
-			'audio/x-realaudio' => 'ra',
-			'audio/wav' => 'wav',
-			'audio/ogg' => 'ogg',
-			'audio/midi' => 'mid',
-			'audio/wma' => 'wma',
-			'application/rtf' => 'rtf',
-			'application/javascript' => 'js',
-			'application/pdf' => 'pdf',
-			'application/msword' => 'doc',
-			'application/vnd.ms-powerpoint' => 'ppt',
-			'application/vnd.ms-write' => 'wri',
-			'application/vnd.ms-excel' => 'xls',
-			'application/vnd.ms-access' => 'mdb',
-			'application/vnd.ms-project' => 'mpp',
-			'application/x-shockwave-flash' => 'swf',
-			'application/java' => 'class',
-			'application/x-tar' => 'tar',
-			'application/zip' => 'zip',
-			'application/x-gzip' => 'gz',
-		);
-
-		if (isset($mimes[strtolower(trim($mimetype))])) :
-			$ret = $mimes[strtolower(trim($mimetype))];
-		else :
-			$ret = 'txt'; // I don't like this, but I'm not sure what else to do.
-		endif;
-		return $ret;
-	}
-
-	function guid ($url) {
-		return 'http://projects.radgeek.com/fwp-capture-thumbnails/?u='.md5($url);
-	}
-
 	function attach_image ($url, $to, $args = array()) {
 		$attach_id = NULL;
 
@@ -565,22 +516,11 @@ class SicEm {
 			$http = wp_remote_request($url, $params);
 		endif;
 
-		if (
-			!is_wp_error($http)
-			and isset($http['response'])
-			and ($http['response']['code'] == 200) // OK
-		) :
-
-			# Get the MIME type from the Content-Type header
-			$mimetype = NULL;
-			if (isset($http['headers']['content-type'])) :
-				$split = explode(";", $http['headers']['content-type'], 2);
-				$mimetype = $split[0];
-				$params = (isset($split[1]) ? $split[1] : null);
-			endif;
-			
-			$data = $http['body'];
-			$imagesize = $this->getimagesize(/*data=*/ $data);
+		$imgBits = new SicWebImage($url, $params, $http);
+		
+		if ($imgBits->is_ok() and $imgBits->is_image()) :
+			// Check whether our size filters or MIME constraints filter it out
+			$imagesize = $imgBits->size();
 			if (!is_null($imagesize)) :
 				$minWidth = (isset($args['min width']) ? $args['min width'] : 0);
 				$minHeight = (isset($args['min height']) ? $args['min height'] : 0);
@@ -595,58 +535,24 @@ class SicEm {
 						.(($imagesize[1] < $minHeight) ? 'height: '.$imagesize[1].' &lt; '.$minHeight.'. ':'')
 						.(!$this->allowedtype($imagesize['mime'], $args) ? 'type ['.$imagesize['mime'].']: whitelist ['.implode('|',$args['whitelist']).'] blacklist ['.implode('|',$args['blacklist']).'].' : '')
 					);			
-					$data = NULL;
+					$imgBits->set_image(NULL, NULL);
 				endif;
 			endif;
 			
+			// Apply (if applicable) crop and resize settings
+			$imgBits->constrain($p['crop'], $p['resize']);
 
-			if (!is_null($data) and (!is_null($p['crop']) or !is_null($p['resize']))) :
-				$constrain = $this->constrainimage(/*image=*/ $data, $p['crop'], $p['resize']);
-				if (!is_null($constrain) and !is_null($constrain[0])) :
-					$data = $constrain[0];
-					$mimetype = $constrain[1];
-				endif;
-			endif;
-
-			if (!is_null($data)) :
-				# Create an appropriate filename
-				$filebase = md5($url) . '.' . $this->SicEmMimeToExtension($mimetype);
-	
-				# Now send the image to the upload directory
-				$up = wp_upload_bits($filebase, $mimetype, $data);
-	
-				if ($up and !$up['error']) :
-					# Now do the attachment
-					$attach = array(
-					'post_mime_type' => $mimetype,
-					'post_tile' => preg_replace('/\.[^.]+$/', '', basename($url)),
-					'post_content' => '',
-					'post_status' => 'inherit',
-					'guid' => $this->guid($url),
-					);
-					$attach_id = wp_insert_attachment($attach, $up['file'], $to);
-	
-					require_once(ABSPATH.'wp-admin'.'/includes/image.php');
-					$attach_data = wp_generate_attachment_metadata($attach_id, $up['file']);
-	
-					wp_update_attachment_metadata($attach_id, $attach_data);
-				else :
-					if (is_array($up) and isset($up['error'])) :
-						$error_message = $up['error'];
-					else :
-						$error_message = preg_replace('/\s+/', " ", FeedWordPress::val($up));
-					endif;
-
-					FeedWordPress::diagnostic('sicem:capture:error',
-						"Failed image storage [$url]: $error_message"
-					);
-				endif;
+			if ($imgBits->is_image()) :
+				$attach_id = $imgBits->upload(/*attach_to=*/ $to);
 			else :
 				$attach_id = -1; // Filtered
 			endif;
 		else :
-			if (is_object($http) and method_exists($http, 'get_error_messages')) :
+			// Got a WP_Error object back instead of a HTTP GET reply
+			if (is_wp_error($http)) :
 				$error_message = preg_replace('/\s+/', " ", "WP_Error: ".implode(" / ", $http->get_error_messages()));
+			
+			// Got a HTTP GET reply other than 200 OK. 
 			elseif (is_array($http) and isset($http['response'])) :
 				$code = $http['response']['code'];
 				$mesg = $http['response']['message'];
@@ -657,12 +563,16 @@ class SicEm {
 				$error_message = preg_replace('/\s+/', " ", "${code} ${mesg}: ".substr(
 					$stripped_body, 0, $len
 				) . ((strlen($stripped_body) > $len) ? "&hellip;" : ''));
+			
+			// Well, who knows what the hell is going on, really?
 			else :
 				$error_message = preg_replace('/\s+/', " ", FeedWordPress::val($http));
 			endif;
 
+			// Send it to the diagnostix module.
 			FeedWordPress::diagnostic('sicem:capture:error', "Failed GET [$url] &laquo;&laquo; ".$error_message);
 		endif;
+
 		return $attach_id;
 	}
 	
@@ -697,129 +607,7 @@ class SicEm {
 		endforeach;
 		return false;
 	}
-	
-	function streamify ($value, $index = 0) {
-		$store = 'sicEmRemoteImages';
-		$protocol = 'sicemvariable';
 
-		// Check whether or not we've registered our URL handler
-		$existed = in_array($protocol, stream_get_wrappers());
-		if (!$existed) :
-			stream_wrapper_register($protocol, "VariableStream");
-		endif;
-	
-		// Now drop the image data into our global
-		if (!isset($GLOBALS[$store])) :
-			$GLOBALS[$store] = array();
-		endif;
-		$GLOBALS[$store][$index] = $value;
-
-		// ... And return the URL we need.
-		return "${protocol}://${store}/${index}";
-	}
-
-	function getimagesize ($value) {
-		$ret = NULL;
-		if (function_exists('getimagesize')) :
-			$ret = getimagesize($this->streamify($value, __METHOD__));
-		endif;
-		return $ret;
-	}
-
-	/**
-	 * SicEm::constrainimage() - a GD library-based crop and resize utility function
-	 *
-	 * Props to Alix Axel and monowerker at <http://stackoverflow.com/questions/999250/php-gd-cropping-and-resizing-images>
-	 * for some nice packaging of the code to do this with only the GD library functions.
-	 */
-	function constrainimage ($value, $crop = null, $size = null) {
-		global $sicEmRemoteImage;
-
-		$ret = NULL;
-		if (function_exists('ImageCreateFromString')) :
-			$image = ImageCreateFromString($value);
-			$data = NULL; $mimetype = NULL;
-			if (is_resource($image) === true) :
-				$x = 0;
-				$y = 0;
-				$width = imagesx($image);
-				$height = imagesy($image);
-
-				/*
-				CROP (Aspect Ratio) Section
-				*/
-
-				if (is_null($crop) === true) :
-					$crop = array($width, $height);
-				else :
-					$crop = array_filter(explode(':', $crop));
-
-					if (empty($crop) === true) :
-						$crop = array($width, $height);
-					else :
-						if ((empty($crop[0]) === true) || (is_numeric($crop[0]) === false)) :
-							$crop[0] = $crop[1];
-						elseif ((empty($crop[1]) === true) || (is_numeric($crop[1]) === false)) :
-							$crop[1] = $crop[0];
-						endif;
-					endif;
-
-					$ratio = array(0 => $width / $height, 1 => $crop[0] / $crop[1]);
-
-					if ($ratio[0] > $ratio[1]) :
-						$width = $height * $ratio[1];
-						$x = (imagesx($image) - $width) / 2;
-					elseif ($ratio[0] < $ratio[1]) :
-						$height = $width / $ratio[1];
-						$y = (imagesy($image) - $height) / 2;
-					endif;
-				endif;
-
-				/*
-				Resize Section
-				*/
-
-				if (is_null($size) === true) :
-					$size = array($width, $height);
-				else :
-					$size = array_filter(explode('x', $size));
-
-					if (empty($size) === true) :
-						$size = array(imagesx($image), imagesy($image));
-					else :
-						if ((empty($size[0]) === true) || (is_numeric($size[0]) === false)) :
-							$size[0] = round($size[1] * $width / $height);
-						elseif ((empty($size[1]) === true) || (is_numeric($size[1]) === false)) :
-							$size[1] = round($size[0] * $height / $width);
-						endif;
-					endif;
-				endif;
-
-				$result = ImageCreateTrueColor($size[0], $size[1]);
-
-				if (is_resource($result) === true) :
-					ImageSaveAlpha($result, true);
-					ImageAlphaBlending($result, true);
-					ImageFill($result, 0, 0, ImageColorAllocate($result, 255, 255, 255));
-					ImageCopyResampled($result, $image, 0, 0, $x, $y, $size[0], $size[1], $width, $height);
-
-					ImageInterlace($result, true);
-
-					ob_start(); // *sigh*
-					ImageJPEG($result, null, 90);
-					$mimetype = 'image/jpeg';
-					$data = ob_get_clean(); // *sigh*
-				endif;
-
-			endif; // (is_resource($image) === true)
-			
-			$ret = array($data, $mimetype);
-		endif; // function_exists('ImageCreateFromString')
-
-		return $ret;
-	} /* constrainimage () */
-
-	
 	function fix_async_upload_image() {
 		if (isset($_REQUEST['attachment_id'])) {
 			$GLOBALS['post'] = get_post($_REQUEST['attachment_id']);
@@ -927,114 +715,6 @@ EOJSON;
 	}
 
 } /* class SicEm */
-
-/*
- * VariableStream class taken from examples in PHP documentation
- * http://www.php.net/manual/en/stream.streamwrapper.example-1.php
- */
-class VariableStream {
-	var $position;
-	var $varname;
-	var $index;
-
-	function stream_open($path, $mode, $options, &$opened_path)
-	{
-		$url = parse_url($path);
-		$this->varname = $url["host"];
-		$this->position = 0;
-
-		if (preg_match('|^/(.*)$|', $url['path'], $ref)) :
-			$this->index = $ref[1];
-		else :
-			$this->index = NULL;
-		endif;
-
-		return true;
-	}
-
-	function &globalVar () {
-		if (!is_null($this->index)) :
-			return $GLOBALS[$this->varname][$this->index];
-		else :
-			return $GLOBALS[$this->varname];
-		endif;
-	} /* VariableStream::globalVar () */
-
-	function stream_read ($count) {
-		$ret = substr($this->globalVar(), $this->position, $count);
-        	$this->position += strlen($ret);
-		return $ret;
-	}
-
-	function stream_write ($data) {
-		$g = $this->globalVar();
-		$left = substr($g, 0, $this->position);
-		$right = substr($g, $this->position + strlen($data));
-		$g = $left . $data . $right;
-		$this->position += strlen($data);
-		return strlen($data);
-	}
-
-	function stream_tell () {
-		return $this->position;
-	}
-
-	function stream_eof () {
-		return $this->position >= strlen($this->globalVar());
-	}
-
-	function stream_seek ($offset, $whence) {
-		switch ($whence) {
-		case SEEK_SET:
-			if ($offset < strlen($this->globalVar()) && $offset >= 0) {
-				$this->position = $offset;
-				return true;
-			} else {
-				return false;
-			}
-			break;
-
-		case SEEK_CUR:
-			if ($offset >= 0) {
-				$this->position += $offset;
-				return true;
-			} else {
-				return false;
-			}
-			break;
-
-		case SEEK_END:
-			if (strlen($GLOBALS[$this->varname]) + $offset >= 0) {
-				$this->position = strlen($GLOBALS[$this->varname]) + $offset;
-				return true;
-			} else {
-				return false;
-			}
-			break;
-
-		default:
-                	return false;
-		}
-	}
-
-	function stream_stat () {
-		return array(
-		"dev" => 0,
-		"ino" => 0,
-		"mode" => 0,
-		"nlink" => 1,
-		"uid" => 0,
-		"gid" => 0,
-		"rdev" => 0,
-		"size" => strlen($this->globalVar()),
-		"atime" => 0,
-		"mtime" => 0,
-		"ctime" => 0,
-		"blksize" => -1,
-		"blocks" => -1,
-		);
-	}
-} /* class VariableStream */
 
 $sicEmAddOn = new SicEm;
 
