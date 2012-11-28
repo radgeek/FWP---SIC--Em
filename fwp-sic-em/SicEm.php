@@ -388,7 +388,7 @@ class SicEm {
 		$q = new WP_Query(array(
 		'post_type' => 'any',
 		'meta_key' => '_syndicated_image_capture',
-		'posts_per_page' => 15,
+		'posts_per_page' => 10,
 		));
 		
 		while ($q->have_posts()) : $q->the_post();
