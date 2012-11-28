@@ -185,10 +185,20 @@ class SicEm {
 		
 		<tr><th scope="row"><?php _e('Image Size: '); ?></th>
 		<td>
+<?php
+		// Only display these settings if PHP has the capacity to make use of em
+		if (SICWebImage::has_gd()) :
+?>
 		<p style="margin-top:0px"><label>Crop to aspect ratio: <input type="text" name="sicem_crop_ratio" value="<?php print esc_attr($sicem_crop_ratio); ?>" placeholder="ex.: 1:1, 2:3, 16:9" /></label></p>
 		<p style="margin-top:0px"><label>Rescale to dimensions: <input type="text" name="sicem_resize" value="<?php print esc_attr($sicem_resize); ?>" placeholder="ex.: 400x300, 400x, x300" /></label></p>
+<?php
+		else :
+?>
+		<p style="margin-top: 0px; font-style: italic; color: #606060">Image cropping and rescaling are not available unless the <a href="http://us2.php.net/manual/en/book.image.php">PHP GD image functions</a> are installed for your hosting environment. Check with your web hosting provider about how to install these modules if you need them.</p>
+<?php
+		endif;
+?>
 		</td></tr>
-
 		<tr><th scope="row"><?php _e('Image Filter: '); ?></th>
 		<td><ul class="options">
 		<li><label><input type="checkbox" name="sicem_min_width_use" value="Yes" <?php if (is_numeric($sicem_min_width) and $sicem_min_width > 0) : ?> checked="checked"<?php endif; ?> /> <strong>Width:</strong>  Only cache images</label> that are at least <input type="number" name="sicem_min_width" value="<?php print (int) $sicem_min_width; ?>" min="0" step="10" size="4" /> pixels wide</li>
