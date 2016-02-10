@@ -230,13 +230,13 @@ class SicEm {
 		<li><label><input type="checkbox" <?php if (!is_null($sicem_mime_whitelist)) : ?> checked="checked"<?php endif; ?> name="sicem_mime_whitelist_use" value="Yes" /> <strong>Permitted Image Types:</strong> <em>Only</em> cache images of certain types:</label>
 			<ul class="suboptions">
 			<?php foreach ($imageTypes as $type => $label) : ?>
-			<li><label style="white-space: nowrap"><input type="checkbox" name="sicem_mime_whitelist[]" <?php if (in_array($type, $sicem_mime_whitelist)) : ?> checked="checked"<?php endif; ?> value="<?php print esc_attr($type); ?>" /><?php print $label; ?> (<code><?php print $type; ?></code>)</label></li>
+			<li><label style="white-space: nowrap"><input type="checkbox" name="sicem_mime_whitelist[]" <?php if(isset($sicem_mime_type)){ if (in_array($type, $sicem_mime_whitelist)) : ?> checked="checked"<?php endif; }?> value="<?php print esc_attr($type); ?>" /><?php print $label; ?> (<code><?php print $type; ?></code>)</label></li>
 			<?php endforeach; ?>
 			</ul></li>
 		<li><label><input type="checkbox" name="sicem_mime_blacklist_use" <?php if (!is_null($sicem_mime_blacklist)) : ?> checked="checked"<?php endif; ?> value="Yes" /> <strong>Forbidden Image Types:</strong> <em>Don&#8217;t</em> capture images of certain types:</label>
 			<ul class="suboptions">
 			<?php foreach ($imageTypes as $type => $label) : ?>
-			<li><label style="white-space: nowrap"><input type="checkbox" name="sicem_mime_blacklist[]" <?php if (in_array($type, $sicem_mime_blacklist)) : ?> checked="checked"<?php endif; ?> value="<?php print esc_attr($type); ?>" /><?php print $label; ?> (<code><?php print $type; ?></code>)</label></li>
+			<li><label style="white-space: nowrap"><input type="checkbox" name="sicem_mime_blacklist[]" <?php if(isset($sicem_mime_type)){ if (in_array($type, $sicem_mime_blacklist)) : ?> checked="checked"<?php endif; } ?> value="<?php print esc_attr($type); ?>" /><?php print $label; ?> (<code><?php print $type; ?></code>)</label></li>
 			<?php endforeach; ?>
 			</ul></li>
 		</ul></td></tr>
