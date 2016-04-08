@@ -4,7 +4,7 @@ Plugin Name: FWP+: SIC 'Em (Syndicated Image Capture)
 Plugin URI: https://github.com/radgeek/FWP---SIC--Em
 Description: A FeedWordPress filter that locally caches images in the feeds you syndicate. Images are stored in your WordPress uploads directory.
 Author: Charles Johnson
-Version: 2012.1128
+Version: 2016.0407
 Author URI: http://projects.radgeek.com
 */
 
@@ -27,7 +27,7 @@ class SicEm {
 	var $name;
 	var $upload;
 	
-	function SicEm () {
+	public function __construct () {
 		$this->name = strtolower(get_class($this));
 		add_filter('syndicated_post', array(&$this, 'process_post'), 10, 2);
 		add_filter('feedwordpress_update_complete', array(&$this, 'process_captured_images'), -1000, 1);
@@ -52,21 +52,21 @@ class SicEm {
 				add_filter( 'media_upload_tabs', array( $this, 'media_upload_tabs' ) );
 			endif;
 		endif;
-	}
+	} /* SicEm::__construct() */
 
 	////////////////////////////////////////////////////////////////////////////
 	// SETTINGS UI /////////////////////////////////////////////////////////////
 	////////////////////////////////////////////////////////////////////////////
 	
-	function diagnostics ($diag, $page) {
+	public function diagnostics ($diag, $page) {
 		$diag['Syndicated Image Cacher']['sicem:capture'] = 'as syndicated images are captured or rejected for local copies';
 		$diag['Syndicated Image Cacher']['sicem:capture:error'] = 'when there is an error encountered when trying to capture a local copy of an image'; 
 		$diag['Syndicated Image Cacher']['sicem:capture:http'] = 'as the HTTP GET request is sent to capture a local copy of a syndicated image';
 		$diag['Syndicated Image Cacher']['sicem:capture:reject'] = 'when a captured image is rejected instead of being kept as a local copy';
 		return $diag;
-	}
+	} /* SicEm::diagnostics () */
 	
-	function add_settings_box ($page) {
+	public function add_settings_box ($page) {
 		add_meta_box(
 			/*id=*/ "feedwordpress_{$this->name}_box",
 			/*title=*/ __("Syndicated Images"),
@@ -76,7 +76,7 @@ class SicEm {
 		);
 	} /* SicEm::add_settings_box() */
 
-	function display_settings ($page, $box = NULL) {
+	public function display_settings ($page, $box = NULL) {
 			$upload = wp_upload_dir( /*now=*/ NULL );
 			$uploadUrl = $upload['url'] . '/' . md5('http://example.com/example.jpg') . '.jpg';
 
@@ -253,8 +253,9 @@ class SicEm {
 		</td></tr>
 		</table>
 		<?php
-	}
-	function save_settings ($params, $page) {
+	} /* SicEm::display_settings() */
+	
+	public function save_settings ($params, $page) {
 		if (isset($params['sicem_cache_images'])) :
 			$page->update_setting('cache images', $params['sicem_cache_images']);
 			$page->update_setting('feature captured images', $params['sicem_feature_images']);
@@ -295,14 +296,14 @@ class SicEm {
 			
 			$page->update_setting('sicem strip uncacheable images', $params["sicem_strip_uncacheable_images"]);
 		endif;
-	}
+	} /* SicEm::save_settings () */
 
 	////////////////////////////////////////////////////////////////////////////
 	// FUNCTIONALITY ///////////////////////////////////////////////////////////
 	////////////////////////////////////////////////////////////////////////////
 	var $post;
 
-	function the_content ($content) {
+	public function the_content ($content) {
 		global $post;
 		
 		if (function_exists('is_syndicated')) :
@@ -326,9 +327,9 @@ class SicEm {
 		endif;
 		
 		return $content;
-	}
+	} /* SicEm::the_content() */
 
-	function process_post ($data, $post) {
+	public function process_post ($data, $post) {
 		$img_src = FeedWordPressHTML::attributeRegex('img', 'src');
 		
 		# Match any image elements in the syndicated item
@@ -381,7 +382,7 @@ class SicEm {
 		return $data;
 	} /* function SicEm::process_post () */
 
-	function process_captured_images ($delta) {
+	public function process_captured_images ($delta) {
 		global $post, $wpdb;
 
 		// Let's do this.
@@ -491,13 +492,13 @@ class SicEm {
 			endif;
 		endwhile;
 
-	}
+	} /* SicEm::process_captured_images () */
 
 	////////////////////////////////////////////////////////////////////////////
 	// UTILITY FUNCTIONS ///////////////////////////////////////////////////////
 	////////////////////////////////////////////////////////////////////////////
 	
-	function insert_revision ($post) {
+	public function insert_revision ($post) {
 
 		$success = true; // Innocent until proven guilty
 		
@@ -538,7 +539,7 @@ class SicEm {
 
 	} /* SicEm::insert_revision () */
 	
-	function fix_revision_meta ($revision_id) {
+	public function fix_revision_meta ($revision_id) {
 		global $wpdb;
 		
 		$post_author = (int) $this->post->post_author;
@@ -551,7 +552,7 @@ class SicEm {
 		");
 	} /* SicEm::fix_revision_meta () */
 	
-	function attach_image ($url, $to, $args = array()) {
+	public function attach_image ($url, $to, $args = array()) {
 		$attach_id = NULL;
 
 		$p = wp_parse_args($args, array(
@@ -643,9 +644,9 @@ class SicEm {
 		endif;
 
 		return $attach_id;
-	}
+	} /* SicEm::attach_image () */
 	
-	function allowedtype ($type, $args) {
+	public function allowedtype ($type, $args) {
 		if (!isset($args['blacklist'])) : $args['blacklist'] = NULL; endif;
 		if (!isset($args['whitelist'])) : $args['whitelist'] = NULL; endif;
 		
@@ -675,21 +676,21 @@ class SicEm {
 			endif;
 		endforeach;
 		return false;
-	}
+	} /* SicEm::allowedtype() */
 
-	function fix_async_upload_image() {
+	public function fix_async_upload_image() {
 		if (isset($_REQUEST['attachment_id'])) {
 			$GLOBALS['post'] = get_post($_REQUEST['attachment_id']);
 		}
-	}
+	} /* SicEm::fix_async_upload_iamge () */
 
 	/**
 	 * Test context to see if the uploader is being used for the image widget or for other regular uploads
 	 *
-	 * @return void
+	 * @return bool
 	 * @author Shane & Peter, Inc. (Peter Chester)
 	 */
-	function is_sic_pick_context() {
+	public function is_sic_pick_context() {
 		global $fwp_path;
 			
 		if ( isset($_SERVER['HTTP_REFERER']) and strpos($_SERVER['HTTP_REFERER'], 'sic_pick_feed_id') !== false ) :
@@ -700,7 +701,7 @@ class SicEm {
 			return true;
 		endif;
 		return false;
-	}
+	} /* SicEm::is_sic_pick_context () */
 	
 	/**
 	 * Somewhat hacky way of replacing "Insert into Post" with "Insert into Widget"
@@ -708,17 +709,17 @@ class SicEm {
 	 * @param string $translated_text text that has already been translated (normally passed straight through)
 	 * @param string $source_text text as it is in the code
 	 * @param string $domain domain of the text
-	 * @return void
+	 * @return bool
 	 * @author Shane & Peter, Inc. (Peter Chester)
 	 */
-	function replace_text_in_thickbox($translated_text, $source_text, $domain) {
+	public function replace_text_in_thickbox($translated_text, $source_text, $domain) {
 		if ( $this->is_sic_pick_context() ) {
 			if ('Insert into Post' == $source_text) {
 				return __('Use as Featured Image', $domain );
 			}
 		}
 		return $translated_text;
-	}
+	} /* SicEm::replace_text_in_thickbox() */
 	
 	/**
 	 * Filter image_end_to_editor results
@@ -733,7 +734,7 @@ class SicEm {
 	 * @return string javascript array of attachment url and id or just the url
 	 * @author Shane & Peter, Inc. (Peter Chester)
 	 */
-	function image_send_to_editor( $html, $id, $caption, $title, $align, $url, $size, $alt = '' ) {
+	public function image_send_to_editor( $html, $id, $caption, $title, $align, $url, $size, $alt = '' ) {
 		// Normally, media uploader return an HTML string (in this case, typically a complete image tag surrounded by a caption).
 		// Don't change that; instead, send custom javascript variables back to opener.
 		// Check that this is for the widget. Shouldn't hurt anything if it runs, but let's do it needlessly.
@@ -767,7 +768,7 @@ EOJSON;
 			$ret = $html;
 		endif;
 		return $ret;
-	}
+	} /* SicEm::image_send_to_editor () */
 
 	/**
 	 * Remove from url tab until that functionality is added to widgets.
@@ -776,12 +777,12 @@ EOJSON;
 	 * @return void
 	 * @author Shane & Peter, Inc. (Peter Chester)
 	 */
-	function media_upload_tabs($tabs) {
+	public function media_upload_tabs($tabs) {
 		if ( $this->is_sic_pick_context() ) {
 			unset($tabs['type_url']);
 		}
 		return $tabs;
-	}
+	} /* SicEm::media_upload_tabs () */
 
 } /* class SicEm */
 
