@@ -38,11 +38,21 @@ class SicEm {
 		// If user opts for it, put a gallery at the end of syndicated posts
 		add_filter('the_content', array(&$this, 'the_content'), 200000, 2);
 		
+		if (WP_ADMIN) : // set up image picker through massive fuckery
+			add_action('admin_init', array($this, 'admin_init'), -10);
+			add_action('admin_init', array($this, 'fix_async_upload_image'), 10);
+		endif;
+	} /* SicEm::__construct() */
+
+	////////////////////////////////////////////////////////////////////////////
+	// SETTINGS UI /////////////////////////////////////////////////////////////
+	////////////////////////////////////////////////////////////////////////////
+
+	public function admin_init () {
 		global $pagenow;
 		global $sicem_path;
-		if (WP_ADMIN) : // set up image picker through massive fuckery
-			add_action('admin_init', array(&$this, 'fix_async_upload_image'));
-			
+
+		if (class_exists('FeedWordPressSettingsUI')) :
 			if ( FeedWordPressSettingsUI::is_admin() ) :
 				wp_enqueue_style( 'thickbox' );
 				wp_enqueue_script( 'sic-em-image-picker', WP_PLUGIN_URL.'/'.$sicem_path.'/image-picker.js',array('thickbox'), false, true );
@@ -52,12 +62,8 @@ class SicEm {
 				add_filter( 'media_upload_tabs', array( $this, 'media_upload_tabs' ) );
 			endif;
 		endif;
-	} /* SicEm::__construct() */
+	} /* SicEm::admin_init () */
 
-	////////////////////////////////////////////////////////////////////////////
-	// SETTINGS UI /////////////////////////////////////////////////////////////
-	////////////////////////////////////////////////////////////////////////////
-	
 	public function diagnostics ($diag, $page) {
 		$diag['Syndicated Image Cacher']['sicem:capture'] = 'as syndicated images are captured or rejected for local copies';
 		$diag['Syndicated Image Cacher']['sicem:capture:error'] = 'when there is an error encountered when trying to capture a local copy of an image'; 
