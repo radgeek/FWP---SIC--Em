@@ -156,6 +156,17 @@ class SicEm {
 			$sicem_crop_ratio = $page->setting('sicem crop ratio', NULL);
 			$sicem_resize = $page->setting('sicem resize', NULL);
 
+			$stripFeaturedImageSelector = array(
+			'no' => 'Leave references to the image in the post',
+			'yes' => 'Strip the image out of the syndicated post content',
+			);
+			$sfisParams = array(
+			'input-name' => 'sicem_strip_featured_image',
+			'setting-default' => NULL,
+			'global-setting-default' => 'no',
+			'default-input-value' => 'default',
+			);
+			
 			$stripUncacheableImagesSelector = array(
 			'no' => 'Leave the image in the post with a hotlink to the original image location',
 			'yes' => 'Strip the image out of the syndicated post content',
@@ -198,6 +209,16 @@ class SicEm {
 		<?php endif; ?>
 		</div>
 		<input type="number" id="sicem-default-featured-image" name="sicem_default_featured_image" value="<?php print esc_attr($defaultFeaturedImage); ?>" size="3" />
+		</td></tr>
+		
+		<tr><th scope="row"><?php _e('Featured image in post content:'); ?></th>
+		<td><p style="margin-top: 0px">When SIC 'Em uses an image to set the Featured Image for a syndicated post...</p>
+		<?php
+			$page->setting_radio_control(
+				'sicem strip featured image', 'sicem_strip_featured_image',
+				$stripFeaturedImageSelector, $sfisParams
+			);
+		?>
 		</td></tr>
 		
 		<tr><th scope="row"><?php _e('Custom Fields:'); ?></th>
@@ -246,7 +267,7 @@ class SicEm {
 			<?php endforeach; ?>
 			</ul></li>
 		</ul></td></tr>
-		
+
 		<tr><th scope="row"><?php _e('Uncacheable Images:'); ?></th>
 		<td><p style="margin-top: 0px">When a filter prevents FeedWordPress from
 		capturing a local copy of a syndicated image...</p>
@@ -300,6 +321,7 @@ class SicEm {
 				$page->update_setting("sicem ${spacedKey}", $update_to);
 			endforeach;
 			
+			$page->update_setting('sicem strip featured image', $params["sicem_strip_featured_image"]);
 			$page->update_setting('sicem strip uncacheable images', $params["sicem_strip_uncacheable_images"]);
 		endif;
 	} /* SicEm::save_settings () */
@@ -313,8 +335,28 @@ class SicEm {
 		global $post;
 		
 		if (function_exists('is_syndicated')) :
-			if (is_syndicated()) :
+			if (is_syndicated()) :				
 				$source = get_syndication_feed_object($post->ID);
+
+				$sfi = $source->setting('sicem strip featured image', 'sicem_strip_featured_image', 'no');
+				switch ($sfi) :
+				case 'yes' :
+					$thumbId = get_post_thumbnail_id($post->ID);
+					if (!!$thumbId) :
+						$feat_img = wp_get_attachment_url($thumbId);
+						$find_url = preg_quote($feat_img);
+						$content = preg_replace(
+							':(<img \s+ [^>]*src=[^>]*)'.$find_url.'([^>]*>):ix',
+							/*blank it out*/ '',
+							$content
+						);
+					endif;
+					break;
+				case 'no' :
+				default :
+					// NOOP
+				endswitch;
+				
 				$ig = $source->setting('sicem insert gallery', 'sicem_insert_gallery', 'no');
 				switch ($ig) :
 				case 'before' :
