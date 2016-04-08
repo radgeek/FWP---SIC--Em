@@ -4,7 +4,7 @@ Plugin Name: FWP+: SIC 'Em (Syndicated Image Capture)
 Plugin URI: https://github.com/radgeek/FWP---SIC--Em
 Description: A FeedWordPress filter that locally caches images in the feeds you syndicate. Images are stored in your WordPress uploads directory.
 Author: Charles Johnson
-Version: 2016.0407
+Version: 2016.0408
 Author URI: http://projects.radgeek.com
 */
 
