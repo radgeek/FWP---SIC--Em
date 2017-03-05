@@ -4,7 +4,7 @@ Plugin Name: FWP+: SIC 'Em (Syndicated Image Capture)
 Plugin URI: https://github.com/radgeek/FWP---SIC--Em
 Description: A FeedWordPress filter that locally caches images in the feeds you syndicate. Images are stored in your WordPress uploads directory.
 Author: Charles Johnson
-Version: 2016.0408
+Version: 2017.0305
 Author URI: http://projects.radgeek.com
 */
 
@@ -38,7 +38,8 @@ class SicEm {
 		// If user opts for it, put a gallery at the end of syndicated posts
 		add_filter('the_content', array(&$this, 'the_content'), 200000, 2);
 		
-		if (WP_ADMIN) : // set up image picker through massive fuckery
+		// Set up image picker through massive fuckery.
+		if (defined('WP_ADMIN') or is_admin()) : // set up image picker through massive fuckery
 			add_action('admin_init', array($this, 'admin_init'), -10);
 			add_action('admin_init', array($this, 'fix_async_upload_image'), 10);
 		endif;
@@ -257,13 +258,13 @@ class SicEm {
 		<li><label><input type="checkbox" <?php if (!is_null($sicem_mime_whitelist)) : ?> checked="checked"<?php endif; ?> name="sicem_mime_whitelist_use" value="Yes" /> <strong>Permitted Image Types:</strong> <em>Only</em> cache images of certain types:</label>
 			<ul class="suboptions">
 			<?php foreach ($imageTypes as $type => $label) : ?>
-			<li><label style="white-space: nowrap"><input type="checkbox" name="sicem_mime_whitelist[]" <?php if (in_array($type, $sicem_mime_whitelist)) : ?> checked="checked"<?php endif; ?> value="<?php print esc_attr($type); ?>" /><?php print $label; ?> (<code><?php print $type; ?></code>)</label></li>
+			<li><label style="white-space: nowrap"><input type="checkbox" name="sicem_mime_whitelist[]" <?php if (!is_null($sicem_mime_whitelist) and in_array($type, $sicem_mime_whitelist)) : ?> checked="checked"<?php endif; ?> value="<?php print esc_attr($type); ?>" /><?php print $label; ?> (<code><?php print $type; ?></code>)</label></li>
 			<?php endforeach; ?>
 			</ul></li>
 		<li><label><input type="checkbox" name="sicem_mime_blacklist_use" <?php if (!is_null($sicem_mime_blacklist)) : ?> checked="checked"<?php endif; ?> value="Yes" /> <strong>Forbidden Image Types:</strong> <em>Don&#8217;t</em> capture images of certain types:</label>
 			<ul class="suboptions">
 			<?php foreach ($imageTypes as $type => $label) : ?>
-			<li><label style="white-space: nowrap"><input type="checkbox" name="sicem_mime_blacklist[]" <?php if (in_array($type, $sicem_mime_blacklist)) : ?> checked="checked"<?php endif; ?> value="<?php print esc_attr($type); ?>" /><?php print $label; ?> (<code><?php print $type; ?></code>)</label></li>
+			<li><label style="white-space: nowrap"><input type="checkbox" name="sicem_mime_blacklist[]" <?php if (!is_null($sicem_mime_blacklist) and in_array($type, $sicem_mime_blacklist)) : ?> checked="checked"<?php endif; ?> value="<?php print esc_attr($type); ?>" /><?php print $label; ?> (<code><?php print $type; ?></code>)</label></li>
 			<?php endforeach; ?>
 			</ul></li>
 		</ul></td></tr>
