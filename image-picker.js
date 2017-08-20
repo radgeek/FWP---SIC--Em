@@ -7,8 +7,8 @@ function send_to_editor(h) {
 	var picked = jQuery.parseJSON(h);
 
 	// store attachment id in hidden field
-	jQuery( '#sicem-default-featured-image' ).val( picked.id );
-	jQuery( '#sicem-default-featured-image-display' ).html( picked.sample );
+	jQuery( '#gfi-default-featured-image' ).val( picked.id );
+	jQuery( '#gfi-default-featured-image-display' ).html( picked.sample );
 	
 	// close thickbox
 	tb_remove();
@@ -18,16 +18,29 @@ function send_to_editor(h) {
 }
 
 jQuery(document).ready(function() {
-	//jQuery("#sicem-default-featured-image").hide();
-	jQuery('<div style="margin-top: 5px; margin-bottom: 5px"><a href="media-upload.php?type=image&amp;sic_pick_feed_id=*&amp;TB_iframe=1" class="button thickbox-image-widget">Pick an image...</a> <a class="button thickbox-image-widget-remove" href="#">X Remove</a></div>').insertBefore(jQuery('#sicem-default-featured-image'));
+
+	jQuery('#grab-feature-images-advanced-toggle-link').click(function (ev) {
+		ev.preventDefault();
+		jQuery('.grab-feature-images-advanced').toggle(500);
+		if (jQuery('#grab-feature-images-advanced-toggle-link').text() == 'Advanced Settings') {
+			jQuery('#grab-feature-images-advanced-toggle-link').text('Hide Advanced Settings');
+		} else {
+			jQuery('#grab-feature-images-advanced-toggle-link').text('Advanced Settings');
+		}
+		return false;
+	});
+	jQuery('form').submit(function () { jQuery('.grab-feature-images-advanced').show(0); return true; });
+
+	//jQuery("#gfi-default-featured-image").hide();
+	jQuery('<div style="margin-top: 5px; margin-bottom: 5px"><a href="media-upload.php?type=image&amp;sic_pick_feed_id=*&amp;TB_iframe=1" class="button thickbox-image-widget">Pick an image...</a> <a class="button thickbox-image-widget-remove" href="#">X Remove</a></div>').insertBefore(jQuery('#gfi-default-featured-image'));
 	
 	jQuery("body").click(function(event) {
 		if (jQuery(event.target).is('a.thickbox-image-widget')) {
 			tb_show("Add an Image", event.target.href, false);
 			return false;
 		} else if (jQuery(event.target).is('a.thickbox-image-widget-remove')) {
-			jQuery('#sicem-default-featured-image').val( '' );
-			jQuery('#sicem-default-featured-image-display').html( '' );
+			jQuery('#gfi-default-featured-image').val( '' );
+			jQuery('#gfi-default-featured-image-display').html( '' );
 			return false;
 		}
 	});

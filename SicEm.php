@@ -10,6 +10,11 @@ Author URI: http://projects.radgeek.com
 
 require_once(dirname(__FILE__).'/sicwebimage.class.php');
 
+define('FWPRNC_CACHE_IMAGES_DEFAULT', 'no');
+define('FWPRNC_GRAB_FULL_HTML_DEFAULT', 'no');
+define('FWPRNC_USE_TITLE_FOR_REUTERS_GUID_DEFAULT', 'yes');
+define('FWPRNC_PROCESS_POSTS_MAX', 70);
+
 // Get the path relative to the plugins directory in which FWP is stored
 preg_match (
 	'|'.preg_quote(WP_PLUGIN_DIR).'/(.+)$|',
@@ -26,10 +31,12 @@ endif;
 class GrabFeaturedImages {
 	var $name;
 	var $upload;
-	
+	private $post;
+
 	public function __construct () {
 		$this->name = strtolower(get_class($this));
 		add_filter('syndicated_post', array(&$this, 'process_post'), 10, 2);
+		add_filter('feedwordpress_update_complete', array(&$this, 'process_full_html'), -2000, 1);
 		add_filter('feedwordpress_update_complete', array(&$this, 'process_captured_images'), -1000, 1);
 		add_action('feedwordpress_admin_page_posts_meta_boxes', array(&$this, 'add_settings_box'));
 		add_action('feedwordpress_admin_page_posts_save', array(&$this, 'save_settings'), 10, 2);
@@ -87,7 +94,7 @@ class GrabFeaturedImages {
 			
 		$featureImagesSelector = array(
 		"no" => __("Just display the image"),
-		"yes" => __("Use the image as the Featured Image for the syndicated post"),
+		"yes" => __("Capture a local copy of the first image to use as the Featured Image for the syndicated post"),
 		);
 			
 		$fisParams = array(
@@ -117,9 +124,7 @@ class GrabFeaturedImages {
 			$defaultFeaturedImage = $globalDefaultFeaturedImage;
 		endif;
 			
-			$customFieldName = $page->setting('gfi custom field', NULL);
-			
-			$imageTypes = array('image/jpeg' => 'JPEG', 'image/gif' => 'GIF', 'image/png' => 'PNG', 'image/vnd.microsoft.icon' => 'ICO', 'image/tiff' => 'TIFF',  );
+		$imageTypes = array('image/jpeg' => 'JPEG', 'image/gif' => 'GIF', 'image/png' => 'PNG', 'image/vnd.microsoft.icon' => 'ICO', 'image/tiff' => 'TIFF',  );
 			
 			$gfi_min_width = $page->setting('gfi min width', 0);
 			$gfi_min_height = $page->setting('gfi min height', 0);
@@ -142,6 +147,18 @@ class GrabFeaturedImages {
 			'default-input-value' => 'default',
 			);
 			
+			$grabFullHTMLSelector = array(
+			"no" => __("<strong>Use contents from feed:</strong> Keep the contents or excerpt provided by the feed"),
+			"yes" => __("<strong>Retrieve full text from web:</strong> Attempt to retrieve full text from <code>http://example.com/page/1</code>, using the included link"),
+			);
+			$gfhParams = array(
+			'input-name' => "rnc_grab_full_html",
+			"setting-default" => NULL,
+			"global-setting-default" => FWPRNC_GRAB_FULL_HTML_DEFAULT,
+			"default-input-value" => 'default',
+			);
+
+			
 			$stripUncacheableImagesSelector = array(
 			'no' => 'Leave the image in the post with a hotlink to the original image location',
 			'yes' => 'Strip the image out of the syndicated post content',
@@ -160,8 +177,19 @@ class GrabFeaturedImages {
 		</style>
 
 		<table class="edit-form narrow">
+		<tbody>
+		<tr><th scope="row"><?php _e('Retrieve full HTML:'); ?></th>
+		<td><p>When a syndicated post includes a short text description and a
+		link to the full story at <code>http://example.com/page/1</code>,
+		<?php
+			$page->setting_radio_control(
+				'grab full html', 'grab_full_html',
+				$grabFullHTMLSelector, $gfhParams
+			);
+		?></td></tr>
+
 		<tr><th scope="row"><?php _e('Feature images:'); ?></th>
-		<td><p>When FeedWordPress captures a local copy of a syndicated image...</p>
+		<td><p>When FeedWordPress finds images in a syndicated post...</p>
 		<?php
 			$page->setting_radio_control(
 				'feature captured images', 'feature_captured_images',
@@ -178,7 +206,7 @@ class GrabFeaturedImages {
 		</td></tr>
 		
 		<tr><th scope="row"><?php _e('Featured image in post content:'); ?></th>
-		<td><p style="margin-top: 0px">When SIC 'Em uses an image to set the Featured Image for a syndicated post...</p>
+		<td><p style="margin-top: 0px">When an image is used to set the Featured Image for a syndicated post...</p>
 		<?php
 			$page->setting_radio_control(
 				'gfi strip featured image', 'gfi_strip_featured_image',
@@ -187,12 +215,7 @@ class GrabFeaturedImages {
 		?>
 		</td></tr>
 		
-		<tr><th scope="row"><?php _e('Custom Fields:'); ?></th>
-		<td><p style="margin-top:0px">When FeedWordPress captures a local copy of a syndicated image, store the local URL in a Custom Field named...</p>
-		<div><label>Name: <input type="text" name="gfi_custom_field_name" value="<?php print esc_attr($customFieldName); ?>" size="15" placeholder="custom field name" /></label>
-		<div class="setting-description">Leave blank if you don't need to store the URL.</div></div></td></tr>
-		
-		<tr><th scope="row"><?php _e('Image Size: '); ?></th>
+		<tr class="hide-if-js grab-feature-images-advanced"><th scope="row"><?php _e('Image Size: '); ?></th>
 		<td>
 <?php
 		// Only display these settings if PHP has the capacity to make use of em
@@ -208,7 +231,7 @@ class GrabFeaturedImages {
 		endif;
 ?>
 		</td></tr>
-		<tr><th scope="row"><?php _e('Image Filter: '); ?></th>
+		<tr class="hide-if-js grab-feature-images-advanced"><th scope="row"><?php _e('Image Filters: '); ?></th>
 		<td><ul class="options">
 		<li><label><input type="checkbox" name="gfi_min_width_use" value="Yes" <?php if (is_numeric($gfi_min_width) and $gfi_min_width > 0) : ?> checked="checked"<?php endif; ?> /> <strong>Width:</strong>  Only cache images</label> that are at least <input type="number" name="gfi_min_width" value="<?php print (int) $gfi_min_width; ?>" min="0" step="10" size="4" /> pixels wide</li>
 		<li><label><input type="checkbox" name="gfi_min_height_use" <?php if (is_numeric($gfi_min_height) and $gfi_min_height > 0) : ?> checked="checked"<?php endif; ?> value="Yes" /> <strong>Height:</strong> Only cache images</label> that are at least <input type="number" name="gfi_min_height" value="<?php print (int) $gfi_min_height; ?>" min="0" step="10" size="4" /> pixels high</li>
@@ -226,7 +249,7 @@ class GrabFeaturedImages {
 			</ul></li>
 		</ul></td></tr>
 
-		<tr><th scope="row"><?php _e('Uncacheable Images:'); ?></th>
+		<tr class="hide-if-js grab-feature-images-advanced"><th scope="row"><?php _e('Uncacheable Images:'); ?></th>
 		<td><p style="margin-top: 0px">When a filter prevents FeedWordPress from
 		capturing a local copy of a syndicated image...</p>
 		<?php
@@ -236,6 +259,8 @@ class GrabFeaturedImages {
 			);
 		?>
 		</td></tr>
+		<tr id="grab-feature-images-advanced-toggle" class="hide-if-no-js"><th></th><td><a href="#" id="grab-feature-images-advanced-toggle-link">Advanced Settings</a></td></tr>
+		</tbody>
 		</table>
 		<?php
 	} /* GrabFeaturedImages::display_settings() */
@@ -244,7 +269,6 @@ class GrabFeaturedImages {
 		if (isset($params['gfi_feature_images'])) :
 			$page->update_setting('feature captured images', $params['gfi_feature_images']);
 			$page->update_setting('featured image default', $params['gfi_default_featured_image']);
-			$page->update_setting('gfi custom field', $params['gfi_custom_field_name']);
 			
 			// empty strings mean a null value
 			foreach (array('crop ratio', 'resize') as $key) :
@@ -279,13 +303,20 @@ class GrabFeaturedImages {
 			
 			$page->update_setting('gfi strip featured image', $params["gfi_strip_featured_image"]);
 			$page->update_setting('gfi strip uncacheable images', $params["gfi_strip_uncacheable_images"]);
+
+			$page->update_setting('grab full html', $params['rnc_grab_full_html']);
+
+			if ($page->for_default_settings()) :
+				update_option('fwprnc_process_posts_max', $params['fwprnc_process_posts_max']);
+
+			endif;
+
 		endif;
 	} /* GrabFeaturedImages::save_settings () */
 
 	////////////////////////////////////////////////////////////////////////////
 	// FUNCTIONALITY ///////////////////////////////////////////////////////////
 	////////////////////////////////////////////////////////////////////////////
-	var $post;
 
 	public function the_content ($content) {
 		global $post;
@@ -320,50 +351,51 @@ class GrabFeaturedImages {
 	} /* GrabFeaturedImages::the_content() */
 
 	public function process_post ($data, $post) {
-		$img_src = FeedWordPressHTML::attributeRegex('img', 'src');
-		
-		# Match any image elements in the syndicated item
-		preg_match_all($img_src, $data['post_content'], $refs, PREG_SET_ORDER);
-		foreach ($refs as $matches) :
-			$src = FeedWordPressHTML::attributeMatch($matches);
-			if (!isset($data['meta']['_syndicated_image_capture'])) :
-				$data['meta']['_syndicated_image_capture'] = array();
-			endif;
-			$data['meta']['_syndicated_image_capture'][] = $src['value'];
-		endforeach;
-		
-		$thumb_links = $post->entry->get_links(/*rel=*/ "http://github.com/radgeek/FWPPitchMediaGallery/wiki/thumbnail");
-		if (is_array($thumb_links) and count($thumb_links) > 0) :
-			foreach ($thumb_links as $href) :
-				if (!isset($data['meta']['_syndicated_image_capture'])) :
-					$data['meta']['_syndicated_image_capture'] = array();
-				endif;
-				$data['meta']['_syndicated_image_capture'][] = $href;
-				
-				if (!isset($data['meta']['_syndicated_image_featured'])) :
-					$data['meta']['_syndicated_image_featured'] = array();
-				endif;
-				$data['meta']['_syndicated_image_featured'][] = $href;
-			endforeach;
+		# O.K., so we need to be a good citizen here and check whether
+		# or not the post has been filtered out by a previous filter.
+		# If so, just stop here. Otherwise, it should be safe to proceed
+		if ($post->filtered() or !is_array($data)) :
+			return $data;
 		endif;
 		
-		$link_elements = $post->entry->get_links(/*rel=*/ "enclosure");
-		if (is_array($link_elements) and count($link_elements) > 0) :
-			foreach ($link_elements as $href) :
-				if (!isset($data['meta']['_syndicated_image_capture'])) :
-					$data['meta']['_syndicated_image_capture'] = array();
-				endif;
-				$data['meta']['_syndicated_image_capture'][] = $href;
-			endforeach;
+		# (1) The short post description is used for initial post content and
+		# then excerpted for the excerpt. We want to use rss:description
+		# verbatim for the excerpt.
+		$data['post_excerpt'] = $post->entry->get_description();
+		
+		# (2) The rss:link element carries a link to the full content in HTML.
+		# We may need to save this for future use.
+		if ($post->entry->get_link() and ('yes'==$post->link->setting('grab full html', 'grab_full_html', FWPRNC_GRAB_FULL_HTML_DEFAULT))) :
+			$data['meta']['_syndicated_full_html_capture'] = array($post->entry->get_link());
+			
+			if ($post->freshness() < 2) :
+				// This is not a new post, so let's not revert back to the
+				// brief excerpt. This will get overwritten with new full HTML
+				// shortly, anyway.
+				$cur = get_post($post->wp_id());
+				$data['post_content'] = $cur->post_content;
+			endif;
 		endif;
 
-		$enclosures = $post->entry->get_enclosures();
-		if (is_array($enclosures) and count($enclosures) > 0) :
-			foreach ($enclosures as $enclosure) :
-				$data['meta']['_syndicated_image_capture'][] = $enclosure->get_link();
+		# (3) We may as well check the current post content for images to capture.
+		$aaImgs = $this->scan_for_images(array(
+		"post_content" => $data['post_content'],
+		"thumb_links" => $post->entry->get_links(/*rel=*/ "http://github.com/radgeek/FWPPitchMediaGallery/wiki/thumbnail"),
+		"links" => $post->entry->get_links(/*rel=*/ "enclosure"),
+		"enclosures" => $post->entry->get_enclosures(),
+		));
+		foreach ($aaImgs as $key => $aImgs) :
+			foreach ($aImgs as $aImg) :
+				if (strlen($aImg) > 0) :
+					if (!isset($data['meta'][$key])) :
+						$data['meta'][$key] = array();
+					endif;
+					$data['meta'][$key][] = $aImg;
+				endif;
 			endforeach;
-		endif;
-		
+		endforeach;
+
+		# (4) Set default thumbnail, if available and applicable. May be revised later.
 		$thumb_id = $post->link->setting('featured image default', 'featured_image_default', NULL);
 		if ($thumb_id) :
 			$data['meta']['_thumbnail_id'] = $thumb_id;
@@ -371,6 +403,161 @@ class GrabFeaturedImages {
 		
 		return $data;
 	} /* function GrabFeaturedImages::process_post () */
+
+	public function scan_for_images ($args = array()) {
+		$args = wp_parse_args($args, array(
+		"post_content" => "",
+		"thumb_links" => array(),
+		"links" => array(),
+		"enclosures" => array(),
+		));
+		$post_content = $args["post_content"];
+		$thumb_links = $args['thumb_links'];
+		$link_elements = $args["links"];
+		$enclosures = $args["enclosures"];
+
+		$ret = array(
+			"_syndicated_image_capture" => array(),
+			"_syndicated_image_featured" => array(),
+		);
+
+		$img_src = FeedWordPressHTML::attributeRegex('img', 'src');
+		
+		# (1) Match any image elements from HTML in the syndicated item
+		preg_match_all($img_src, $post_content, $refs, PREG_SET_ORDER);
+		foreach ($refs as $matches) :
+			$src = FeedWordPressHTML::attributeMatch($matches);
+			$ret['_syndicated_image_capture'][] = $src['value'];
+		endforeach;
+		
+		# (2) Check for a specially marked-up indicator of a thumbnail/Feature Image link
+		if (is_array($thumb_links) and count($thumb_links) > 0) :
+			foreach ($thumb_links as $href) :
+				$ret['_syndicated_image_capture'][] = $href;
+				$ret['_syndicated_image_featured'][] = $href;
+			endforeach;
+		endif;
+		
+		# (3) Check for all <link rel="enclosure"/> elements that may indicate an image of interest
+		if (is_array($link_elements) and count($link_elements) > 0) :
+			foreach ($link_elements as $href) :
+				$ret['_syndicated_image_capture'][] = $href;
+			endforeach;
+		endif;
+
+		# (4) Check enclosures and <media:group/> elements
+		if (is_array($enclosures) and count($enclosures) > 0) :
+			foreach ($enclosures as $enclosure) :
+				$ret['_syndicated_image_capture'][] = $enclosure->get_link();
+			endforeach;
+		endif;
+
+		return $ret;
+	} /* function GrabFeaturedImages::scan_for_images() */
+
+	/**
+	 * process_full_html
+	 *
+	 * @param array $delta Unused
+	 *
+	 * @uses WP_Query::have_posts
+	 * @uses WP_Query::the_post
+	 * @uses get_post_custom_values
+	 * @uses add_post_meta
+	 * @uses delete_post_meta
+	 * @uses get_syndication_feed_object
+	 * @uses SyndicatedLink::setting
+	 * @uses GrabFeaturedImages::process_posts_max
+	 * @uses GrabFeaturedImages::grab_text
+	 * @uses GrabFeaturedImages::insert_revision
+	 * @uses GrabFeaturedImages::scan_for_images
+	 * @uses $post
+	 */
+	public function process_full_html ($delta) {
+		global $post, $wpdb;
+		
+		// Let's do this.
+		$q = new WP_Query(array(
+		'meta_key' => '_syndicated_full_html_capture',
+		'posts_per_page' => $this->process_posts_max(),
+		'order' => 'ASC',
+		));
+		
+		while ($q->have_posts()) : $q->the_post();
+			$this->post = $post;
+			$zapit = false;
+			$captured_from = array();
+			
+			$failed_from = get_post_custom_values('html capture failed');
+			$urls = get_post_custom_values('_syndicated_full_html_capture');
+			$source = get_syndication_feed_object($post->ID);
+
+			$post_images = array();
+			$post_content = $post->post_content;
+
+			if ((count($urls) > 0) and !!$urls[0] and ('yes'==$source->setting('grab full html', 'grab_full_html', FWPRNC_GRAB_FULL_HTML_DEFAULT))) :
+				
+				foreach ($urls as $url) :
+					if ($url) :
+						$post_content = $this->grab_text($url, $post->ID);
+						
+						$ok = false;
+						if (is_string($post_content)) :
+							$post->post_content = $post_content;
+							
+							// Save as a revision of the existing post.
+							$ok = $this->insert_revision($post); 
+						endif;
+						
+						if ($ok) :
+							$zapit = true;
+							$captured_from[] = time()." ".$url." ".substr(FeedWordPress::val($post_content),0,128);
+						else :
+							$failed_from[] = time()." ".$url." ".substr(FeedWordPress::val($post_content),0,128);
+
+							if (count($failed_from) > 3) : // strikes and yr out
+								$zapit = true;
+							endif;
+						endif;
+					endif;
+				endforeach;
+				
+			else :
+				
+				$zapit = true;
+				
+			endif;
+
+			// Now that we have full HTML to work over, scan for <img/> tags etc.
+			$aaImgs = $this->scan_for_images(array(
+			"post_content" => $post_content,
+			));
+			$post_images = $aaImgs['_syndicated_image_capture'];
+
+			// Tack on the URLs of images included in the <img /> tags.
+			if (count($post_images) > 0) :
+				foreach ($post_images as $img) :
+					add_post_meta($post->ID, '_syndicated_image_capture', $img, /*unique=*/ false);
+				endforeach;
+			endif;
+
+			if ($zapit) :
+				delete_post_meta($post->ID, '_syndicated_full_html_capture');
+			endif;
+			if (count($captured_from) > 0) :
+				foreach ($captured_from as $url) :
+					add_post_meta($post->ID, 'html captured from', $url,
+					/*unique=*/ false);
+				endforeach;
+			endif;
+			if (count($failed_from) > 0) :
+				delete_post_meta($post->ID, 'html capture failed');
+				foreach ($failed_from as $url) :
+					add_post_meta($post->ID, 'html capture failed', $url, /*unique=*/ false);
+				endforeach;
+			endif;
+		endwhile;
+	} /* function GrabFeaturedImages::process_full_html() */
 
 	public function process_captured_images ($delta) {
 		global $post, $wpdb;
@@ -393,7 +580,7 @@ class GrabFeaturedImages {
 
 			if ((count($imgs) > 0) and !!$imgs[0] and ('yes'==$source->setting('feature captured images', 'feature_captured_images', 'no'))) :
 				$seekingFeature = ('yes' == $source->setting('feature captured images', 'feature_captured_images', NULL));
-				$customFieldName = trim($source->setting('gfi custom field', 'gfi_custom_field', ''));
+
 				foreach ($imgs as $img) :
 					
 					$imgGuid = SICWebImage::guid($img);
@@ -465,10 +652,6 @@ class GrabFeaturedImages {
 							$replacement,
 							$post->post_content
 						);
-						
-						if ($new_url and (strlen($customFieldName) > 0)) :
-							add_post_meta($post->ID, $customFieldName, $new_url);					
-						endif;
 
 					endif;
 				endforeach;
@@ -487,6 +670,14 @@ class GrabFeaturedImages {
 	////////////////////////////////////////////////////////////////////////////
 	// UTILITY FUNCTIONS ///////////////////////////////////////////////////////
 	////////////////////////////////////////////////////////////////////////////
+
+	function process_posts_max () {
+		$max = get_option('fwprnc_process_posts_max', FWPRNC_PROCESS_POSTS_MAX);
+		if (!is_numeric($max)) :
+			$max = FWPRNC_PROCESS_POSTS_MAX;
+		endif;
+		return $max;
+	} /* FWPReutersNewsConsumer::process_posts_max () */
 	
 	public function insert_revision ($post) {
 
@@ -542,6 +733,74 @@ class GrabFeaturedImages {
 		");
 	} /* GrabFeaturedImages::fix_revision_meta () */
 	
+	public function grab_text ($url, $to, $args = array()) {
+		$args = wp_parse_args($args, array( // Default values
+		'source' => NULL,
+		));
+		if (is_null($args['source'])) :
+			$args['source'] = get_syndication_feed_object($to);
+		endif;
+		
+		$source = $args['source'];
+		
+		$text = NULL;
+
+		# Fetch the URI
+		$headers['Connection'] = 'close';
+		$headers['Referer'] = get_permalink($to);
+		
+		if (is_callable(array('FeedWordPress', 'fetch_timeout'))) :
+			$timeout = FeedWordPress::fetch_timeout();
+		elseif (defined('FEEDWORDPRESS_FETCH_TIME_OUT')) :
+			$timeout = FEEDWORDPRESS_FETCH_TIME_OUT;
+		elseif (defined('FEEDWORDPRESS_FETCH_TIMEOUT_DEFAULT')) :
+			$timeout = FEEDWORDPRESS_FETCH_TIMEOUT_DEFAULT;
+		else :
+			$timeout = 60;
+		endif;
+		
+		FeedWordPress::diagnostic('rnc:capture:http', "HTTP &raquo;&raquo; GET [$url] (".__METHOD__.")");
+		$http = wp_remote_request($url, array(
+			'headers' => $headers,
+			'timeout' => $timeout,
+			'authentication' => $source->authentication_method(),
+			'username' => $source->username(),
+			'password' => $source->password(),
+		));
+
+		if (
+			!is_wp_error($http)
+			and isset($http['response'])
+			and ($http['response']['code'] == 200) // OK
+		) :
+
+			# Get the MIME type from the Content-Type header
+			$mimetype = NULL;
+			if (isset($http['headers']['content-type'])) :
+				$split = explode(";", $http['headers']['content-type'], 2);
+				$mimetype = $split[0];
+				$params = (isset($split[1]) ? $split[1] : null);
+			endif;
+			
+			$data = $http['body'];
+			$text = $data;
+			if (!is_null($data)) :
+				switch ($mimetype) :
+				case 'text/html' :
+				case 'application/xhtml+xml' :
+					if (preg_match(':<body (\s+[^>]*)? > (.+) </body>:six', $data, $ref)) :
+						$data = $ref[2];
+					endif;
+					$text = '<div class="reuters-full-text">'.$data.'</div>';
+				endswitch;
+			endif;
+		else :
+			FeedWordPress::diagnostic('rnc:capture:http', "&laquo;&laquo; ERROR [$url] (".__METHOD__."): ".FeedWordPress::val($http));
+			$text = NULL;
+		endif;
+		return $text;
+	}
+
 	public function attach_image ($url, $to, $args = array()) {
 		$attach_id = NULL;
 
@@ -729,6 +988,13 @@ class GrabFeaturedImages {
 		// Don't change that; instead, send custom javascript variables back to opener.
 		// Check that this is for the widget. Shouldn't hurt anything if it runs, but let's do it needlessly.
 		if ( $this->is_sic_pick_context() ) :
+			if (is_string($url) and strlen($url) == 0) :
+				$src = wp_get_attachment_image_src($id, 'thumbnail');
+				if (is_array($src)) :
+					$url = $src[0];
+				endif;
+			endif;
+
 			$html = addslashes($html);
 			$id = addslashes($id);
 			$caption = addslashes($caption);
@@ -750,7 +1016,7 @@ class GrabFeaturedImages {
 				"url": "$url",
 				"size": "$size",
 				"alt": "$alt",
-				"sample": "$sample" 
+				"sample": "$sample"
 			}
 EOJSON;
 			$ret = trim(preg_replace('/\s+/', ' ', $ret));
