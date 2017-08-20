@@ -12,8 +12,9 @@ require_once(dirname(__FILE__).'/sicwebimage.class.php');
 
 define('FWPGFI_CACHE_IMAGES_DEFAULT', 'no');
 define('FWPGFI_GRAB_FULL_HTML_DEFAULT', 'no');
-define('FWPGFI_USE_TITLE_FOR_REUTERS_GUID_DEFAULT', 'yes');
 define('FWPGFI_PROCESS_POSTS_MAX', 70);
+define('FWPGFI_FULL_HTML_PRE', '<div class="feedwordpress-gaffer-full-text">');
+define('FWPGFI_FULL_HTML_POST', '</div>');
 
 // Get the path relative to the plugins directory in which FWP is stored
 preg_match (
@@ -680,7 +681,7 @@ class GrabFeaturedImages {
 			$max = FWPGFI_PROCESS_POSTS_MAX;
 		endif;
 		return $max;
-	} /* FWPReutersNewsConsumer::process_posts_max () */
+	} /* GrabFeaturedImages::process_posts_max () */
 	
 	public function insert_revision ($post) {
 
@@ -794,7 +795,7 @@ class GrabFeaturedImages {
 					if (preg_match(':<body (\s+[^>]*)? > (.+) </body>:six', $data, $ref)) :
 						$data = $ref[2];
 					endif;
-					$text = '<div class="reuters-full-text">'.$data.'</div>';
+					$text = FWPGFI_FULL_HTML_PRE.$data.FWPGFI_FULL_HTML_POST;
 				endswitch;
 			endif;
 		else :
