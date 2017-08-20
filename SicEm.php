@@ -10,10 +10,10 @@ Author URI: http://projects.radgeek.com
 
 require_once(dirname(__FILE__).'/sicwebimage.class.php');
 
-define('FWPRNC_CACHE_IMAGES_DEFAULT', 'no');
-define('FWPRNC_GRAB_FULL_HTML_DEFAULT', 'no');
-define('FWPRNC_USE_TITLE_FOR_REUTERS_GUID_DEFAULT', 'yes');
-define('FWPRNC_PROCESS_POSTS_MAX', 70);
+define('FWPGFI_CACHE_IMAGES_DEFAULT', 'no');
+define('FWPGFI_GRAB_FULL_HTML_DEFAULT', 'no');
+define('FWPGFI_USE_TITLE_FOR_REUTERS_GUID_DEFAULT', 'yes');
+define('FWPGFI_PROCESS_POSTS_MAX', 70);
 
 // Get the path relative to the plugins directory in which FWP is stored
 preg_match (
@@ -73,10 +73,11 @@ class GrabFeaturedImages {
 	} /* GrabFeaturedImages::admin_init () */
 
 	public function diagnostics ($diag, $page) {
-		$diag['Grab Featured Images']['gfi:capture'] = 'as syndicated images are captured or rejected for local copies';
-		$diag['Grab Featured Images']['gfi:capture:error'] = 'when there is an error encountered when trying to capture a local copy of an image'; 
-		$diag['Grab Featured Images']['gfi:capture:http'] = 'as the HTTP GET request is sent to capture a local copy of a syndicated image';
-		$diag['Grab Featured Images']['gfi:capture:reject'] = 'when a captured image is rejected instead of being kept as a local copy';
+		$sect = 'Grab Featured Images'; $pre = "gfi";
+		$diag[$sect]["$pre:capture"] = 'as syndicated images are captured or rejected for local copies';
+		$diag[$sect]["$pre:capture:error"] = 'when there is an error encountered when trying to capture a local copy of an image'; 
+		$diag[$sect]["$pre:capture:http"] = 'as the HTTP GET request is sent to capture a local copy of a syndicated image';
+		$diag[$sect]["$pre:capture:reject"] = 'when a captured image is rejected instead of being kept as a local copy';
 		return $diag;
 	} /* GrabFeaturedImages::diagnostics () */
 	
@@ -152,9 +153,9 @@ class GrabFeaturedImages {
 			"yes" => __("<strong>Retrieve full text from web:</strong> Attempt to retrieve full text from <code>http://example.com/page/1</code>, using the included link"),
 			);
 			$gfhParams = array(
-			'input-name' => "rnc_grab_full_html",
+			'input-name' => "gfi_grab_full_html",
 			"setting-default" => NULL,
-			"global-setting-default" => FWPRNC_GRAB_FULL_HTML_DEFAULT,
+			"global-setting-default" => FWPGFI_GRAB_FULL_HTML_DEFAULT,
 			"default-input-value" => 'default',
 			);
 
@@ -304,10 +305,10 @@ class GrabFeaturedImages {
 			$page->update_setting('gfi strip featured image', $params["gfi_strip_featured_image"]);
 			$page->update_setting('gfi strip uncacheable images', $params["gfi_strip_uncacheable_images"]);
 
-			$page->update_setting('grab full html', $params['rnc_grab_full_html']);
+			$page->update_setting('grab full html', $params['gfi_grab_full_html']);
 
 			if ($page->for_default_settings()) :
-				update_option('fwprnc_process_posts_max', $params['fwprnc_process_posts_max']);
+				update_option('fwpgfi_process_posts_max', $params['fwpgfi_process_posts_max']);
 
 			endif;
 
@@ -365,7 +366,7 @@ class GrabFeaturedImages {
 		
 		# (2) The rss:link element carries a link to the full content in HTML.
 		# We may need to save this for future use.
-		if ($post->entry->get_link() and ('yes'==$post->link->setting('grab full html', 'grab_full_html', FWPRNC_GRAB_FULL_HTML_DEFAULT))) :
+		if ($post->entry->get_link() and ('yes'==$post->link->setting('grab full html', 'grab_full_html', FWPGFI_GRAB_FULL_HTML_DEFAULT))) :
 			$data['meta']['_syndicated_full_html_capture'] = array($post->entry->get_link());
 			
 			if ($post->freshness() < 2) :
@@ -495,7 +496,7 @@ class GrabFeaturedImages {
 			$post_images = array();
 			$post_content = $post->post_content;
 
-			if ((count($urls) > 0) and !!$urls[0] and ('yes'==$source->setting('grab full html', 'grab_full_html', FWPRNC_GRAB_FULL_HTML_DEFAULT))) :
+			if ((count($urls) > 0) and !!$urls[0] and ('yes'==$source->setting('grab full html', 'grab_full_html', FWPGFI_GRAB_FULL_HTML_DEFAULT))) :
 				
 				foreach ($urls as $url) :
 					if ($url) :
@@ -672,9 +673,9 @@ class GrabFeaturedImages {
 	////////////////////////////////////////////////////////////////////////////
 
 	function process_posts_max () {
-		$max = get_option('fwprnc_process_posts_max', FWPRNC_PROCESS_POSTS_MAX);
+		$max = get_option('fwpgfi_process_posts_max', FWPGFI_PROCESS_POSTS_MAX);
 		if (!is_numeric($max)) :
-			$max = FWPRNC_PROCESS_POSTS_MAX;
+			$max = FWPGFI_PROCESS_POSTS_MAX;
 		endif;
 		return $max;
 	} /* FWPReutersNewsConsumer::process_posts_max () */
@@ -759,7 +760,7 @@ class GrabFeaturedImages {
 			$timeout = 60;
 		endif;
 		
-		FeedWordPress::diagnostic('rnc:capture:http', "HTTP &raquo;&raquo; GET [$url] (".__METHOD__.")");
+		FeedWordPress::diagnostic('gfi:capture:http', "HTTP &raquo;&raquo; GET [$url] (".__METHOD__.")");
 		$http = wp_remote_request($url, array(
 			'headers' => $headers,
 			'timeout' => $timeout,
@@ -795,7 +796,7 @@ class GrabFeaturedImages {
 				endswitch;
 			endif;
 		else :
-			FeedWordPress::diagnostic('rnc:capture:http', "&laquo;&laquo; ERROR [$url] (".__METHOD__."): ".FeedWordPress::val($http));
+			FeedWordPress::diagnostic('gfi:capture:http', "&laquo;&laquo; ERROR [$url] (".__METHOD__."): ".FeedWordPress::val($http));
 			$text = NULL;
 		endif;
 		return $text;
