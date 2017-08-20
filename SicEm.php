@@ -1,10 +1,10 @@
 <?php
 /*
-Plugin Name: FWP+: SIC 'Em (Syndicated Image Capture)
+Plugin Name: FWP+: Grab Featured Images
 Plugin URI: https://github.com/radgeek/FWP---SIC--Em
 Description: A FeedWordPress filter that locally caches images in the feeds you syndicate. Images are stored in your WordPress uploads directory.
 Author: Charles Johnson
-Version: 2017.0305
+Version: 2017.0820
 Author URI: http://projects.radgeek.com
 */
 
@@ -18,12 +18,12 @@ preg_match (
 );
 
 if (isset($ref[1])) :
-	$sicem_path = $ref[1];
+	$gfi_path = $ref[1];
 else : // Something went wrong. Let's just guess.
-	$sicem_path = 'fwp-sic-em';
+	$gfi_path = 'fwp-grab-featured-images';
 endif;
 
-class SicEm {
+class GrabFeaturedImages {
 	var $name;
 	var $upload;
 	
@@ -43,7 +43,7 @@ class SicEm {
 			add_action('admin_init', array($this, 'admin_init'), -10);
 			add_action('admin_init', array($this, 'fix_async_upload_image'), 10);
 		endif;
-	} /* SicEm::__construct() */
+	} /* GrabFeaturedImages::__construct() */
 
 	////////////////////////////////////////////////////////////////////////////
 	// SETTINGS UI /////////////////////////////////////////////////////////////
@@ -51,37 +51,37 @@ class SicEm {
 
 	public function admin_init () {
 		global $pagenow;
-		global $sicem_path;
+		global $gfi_path;
 
 		if (class_exists('FeedWordPressSettingsUI')) :
 			if ( FeedWordPressSettingsUI::is_admin() ) :
 				wp_enqueue_style( 'thickbox' );
-				wp_enqueue_script( 'sic-em-image-picker', WP_PLUGIN_URL.'/'.$sicem_path.'/image-picker.js',array('thickbox'), false, true );
+				wp_enqueue_script( 'sic-em-image-picker', WP_PLUGIN_URL.'/'.$gfi_path.'/image-picker.js',array('thickbox'), false, true );
 			elseif ( 'media-upload.php' == $pagenow || 'async-upload.php' == $pagenow ) :
 				add_filter( 'image_send_to_editor', array( $this,'image_send_to_editor'), 1, 8 );
 				add_filter( 'gettext', array( $this, 'replace_text_in_thickbox' ), 1, 3 );
 				add_filter( 'media_upload_tabs', array( $this, 'media_upload_tabs' ) );
 			endif;
 		endif;
-	} /* SicEm::admin_init () */
+	} /* GrabFeaturedImages::admin_init () */
 
 	public function diagnostics ($diag, $page) {
-		$diag['Syndicated Image Cacher']['sicem:capture'] = 'as syndicated images are captured or rejected for local copies';
-		$diag['Syndicated Image Cacher']['sicem:capture:error'] = 'when there is an error encountered when trying to capture a local copy of an image'; 
-		$diag['Syndicated Image Cacher']['sicem:capture:http'] = 'as the HTTP GET request is sent to capture a local copy of a syndicated image';
-		$diag['Syndicated Image Cacher']['sicem:capture:reject'] = 'when a captured image is rejected instead of being kept as a local copy';
+		$diag['Grab Featured Images']['gfi:capture'] = 'as syndicated images are captured or rejected for local copies';
+		$diag['Grab Featured Images']['gfi:capture:error'] = 'when there is an error encountered when trying to capture a local copy of an image'; 
+		$diag['Grab Featured Images']['gfi:capture:http'] = 'as the HTTP GET request is sent to capture a local copy of a syndicated image';
+		$diag['Grab Featured Images']['gfi:capture:reject'] = 'when a captured image is rejected instead of being kept as a local copy';
 		return $diag;
-	} /* SicEm::diagnostics () */
+	} /* GrabFeaturedImages::diagnostics () */
 	
 	public function add_settings_box ($page) {
 		add_meta_box(
 			/*id=*/ "feedwordpress_{$this->name}_box",
-			/*title=*/ __("Syndicated Images"),
+			/*title=*/ __("Featured Images"),
 			/*callback=*/ array(&$this, 'display_settings'),
 			/*page=*/ $page->meta_box_context(),
 			/*context=*/ $page->meta_box_context()
 		);
-	} /* SicEm::add_settings_box() */
+	} /* GrabFeaturedImages::add_settings_box() */
 
 	public function display_settings ($page, $box = NULL) {
 			$upload = wp_upload_dir( /*now=*/ NULL );
@@ -104,7 +104,7 @@ class SicEm {
 			endforeach;
 
 			$params = array(
-			'input-name' => 'sicem_cache_images',
+			'input-name' => 'gfi_cache_images',
 			'setting-default' => NULL,
 			'global-setting-default' => 'no',
 			'labels' => $labels,
@@ -117,7 +117,7 @@ class SicEm {
 			);
 			
 			$fisParams = array(
-			'input-name' => 'sicem_feature_images',
+			'input-name' => 'gfi_feature_images',
 			'setting-default' => NULL,
 			'global-setting-default' => 'no',
 			'default-input-value' => 'default',
@@ -130,7 +130,7 @@ class SicEm {
 			);
 
 			$igsParams = array(
-			'input-name' => 'sicem_insert_gallery',
+			'input-name' => 'gfi_insert_gallery',
 			'setting-default' => NULL,
 			'global-setting-default' => 'no',
 			'default-input-value' => 'default',
@@ -143,26 +143,26 @@ class SicEm {
 				$defaultFeaturedImage = $globalDefaultFeaturedImage;
 			endif;
 			
-			$customFieldName = $page->setting('sicem custom field', NULL);
+			$customFieldName = $page->setting('gfi custom field', NULL);
 			
 			$imageTypes = array('image/jpeg' => 'JPEG', 'image/gif' => 'GIF', 'image/png' => 'PNG', 'image/vnd.microsoft.icon' => 'ICO', 'image/tiff' => 'TIFF',  );
 			
-			$sicem_min_width = $page->setting('sicem min width', 0);
-			$sicem_min_height = $page->setting('sicem min height', 0);
-			$sicem_mime_whitelist = $page->setting('sicem mime whitelist', NULL);
-			$sicem_mime_whitelist = ((strlen($sicem_mime_whitelist)>0) ? explode("|", $sicem_mime_whitelist) : NULL); 
-			$sicem_mime_blacklist = $page->setting('sicem mime blacklist', NULL);
-			$sicem_mime_blacklist = ((strlen($sicem_mime_blacklist)>0) ? explode("|", $sicem_mime_blacklist) : NULL);
+			$gfi_min_width = $page->setting('gfi min width', 0);
+			$gfi_min_height = $page->setting('gfi min height', 0);
+			$gfi_mime_whitelist = $page->setting('gfi mime whitelist', NULL);
+			$gfi_mime_whitelist = ((strlen($gfi_mime_whitelist)>0) ? explode("|", $gfi_mime_whitelist) : NULL); 
+			$gfi_mime_blacklist = $page->setting('gfi mime blacklist', NULL);
+			$gfi_mime_blacklist = ((strlen($gfi_mime_blacklist)>0) ? explode("|", $gfi_mime_blacklist) : NULL);
  
-			$sicem_crop_ratio = $page->setting('sicem crop ratio', NULL);
-			$sicem_resize = $page->setting('sicem resize', NULL);
+			$gfi_crop_ratio = $page->setting('gfi crop ratio', NULL);
+			$gfi_resize = $page->setting('gfi resize', NULL);
 
 			$stripFeaturedImageSelector = array(
 			'no' => 'Leave references to the image in the post',
 			'yes' => 'Strip the image out of the syndicated post content',
 			);
 			$sfisParams = array(
-			'input-name' => 'sicem_strip_featured_image',
+			'input-name' => 'gfi_strip_featured_image',
 			'setting-default' => NULL,
 			'global-setting-default' => 'no',
 			'default-input-value' => 'default',
@@ -174,7 +174,7 @@ class SicEm {
 			);
 			
 			$suisParams = array(
-			'input-name' => 'sicem_strip_uncacheable_images',
+			'input-name' => 'gfi_strip_uncacheable_images',
 			'setting-default' => NULL,
 			'global-setting-default' => 'no',
 			'default-input-value' => 'default',
@@ -204,19 +204,19 @@ class SicEm {
 		?></td></tr>
 		
 		<tr><th scope="row"><?php _e('Default featured image:'); ?></th>
-		<td><div id="sicem-default-featured-image-display" style="float: left; margin-right: 10px;">
+		<td><div id="gfi-default-featured-image-display" style="float: left; margin-right: 10px;">
 		<?php if ($defaultFeaturedImage) : $url = wp_get_attachment_url($defaultFeaturedImage); ?>
 		<img src="<?php print esc_attr($url); ?>" style="height: 60px; width: 60px" />
 		<?php endif; ?>
 		</div>
-		<input type="number" id="sicem-default-featured-image" name="sicem_default_featured_image" value="<?php print esc_attr($defaultFeaturedImage); ?>" size="3" />
+		<input type="number" id="gfi-default-featured-image" name="gfi_default_featured_image" value="<?php print esc_attr($defaultFeaturedImage); ?>" size="3" />
 		</td></tr>
 		
 		<tr><th scope="row"><?php _e('Featured image in post content:'); ?></th>
 		<td><p style="margin-top: 0px">When SIC 'Em uses an image to set the Featured Image for a syndicated post...</p>
 		<?php
 			$page->setting_radio_control(
-				'sicem strip featured image', 'sicem_strip_featured_image',
+				'gfi strip featured image', 'gfi_strip_featured_image',
 				$stripFeaturedImageSelector, $sfisParams
 			);
 		?>
@@ -224,14 +224,14 @@ class SicEm {
 		
 		<tr><th scope="row"><?php _e('Custom Fields:'); ?></th>
 		<td><p style="margin-top:0px">When FeedWordPress captures a local copy of a syndicated image, store the local URL in a Custom Field named...</p>
-		<div><label>Name: <input type="text" name="sicem_custom_field_name" value="<?php print esc_attr($customFieldName); ?>" size="15" placeholder="custom field name" /></label>
+		<div><label>Name: <input type="text" name="gfi_custom_field_name" value="<?php print esc_attr($customFieldName); ?>" size="15" placeholder="custom field name" /></label>
 		<div class="setting-description">Leave blank if you don't need to store the URL.</div></div></td></tr>
 		
 		<tr><th scope="row"><?php _e('Display Image Gallery with Post:'); ?></th>
 		<td><p style="margin-top:0px">When WordPress displays a syndicated post with captured images attached to it...</p>
 		<?php
 			$page->setting_radio_control(
-				'sicem insert gallery', 'sicem_insert_gallery',
+				'gfi insert gallery', 'gfi_insert_gallery',
 				$insertGallerySelector, $igsParams);
 		?></td></tr>
 
@@ -241,8 +241,8 @@ class SicEm {
 		// Only display these settings if PHP has the capacity to make use of em
 		if (SICWebImage::has_gd()) :
 ?>
-		<p style="margin-top:0px"><label>Crop to aspect ratio: <input type="text" name="sicem_crop_ratio" value="<?php print esc_attr($sicem_crop_ratio); ?>" placeholder="ex.: 1:1, 2:3, 16:9" /></label></p>
-		<p style="margin-top:0px"><label>Rescale to dimensions: <input type="text" name="sicem_resize" value="<?php print esc_attr($sicem_resize); ?>" placeholder="ex.: 400x300, 400x, x300" /></label></p>
+		<p style="margin-top:0px"><label>Crop to aspect ratio: <input type="text" name="gfi_crop_ratio" value="<?php print esc_attr($gfi_crop_ratio); ?>" placeholder="ex.: 1:1, 2:3, 16:9" /></label></p>
+		<p style="margin-top:0px"><label>Rescale to dimensions: <input type="text" name="gfi_resize" value="<?php print esc_attr($gfi_resize); ?>" placeholder="ex.: 400x300, 400x, x300" /></label></p>
 <?php
 		else :
 ?>
@@ -253,18 +253,18 @@ class SicEm {
 		</td></tr>
 		<tr><th scope="row"><?php _e('Image Filter: '); ?></th>
 		<td><ul class="options">
-		<li><label><input type="checkbox" name="sicem_min_width_use" value="Yes" <?php if (is_numeric($sicem_min_width) and $sicem_min_width > 0) : ?> checked="checked"<?php endif; ?> /> <strong>Width:</strong>  Only cache images</label> that are at least <input type="number" name="sicem_min_width" value="<?php print (int) $sicem_min_width; ?>" min="0" step="10" size="4" /> pixels wide</li>
-		<li><label><input type="checkbox" name="sicem_min_height_use" <?php if (is_numeric($sicem_min_height) and $sicem_min_height > 0) : ?> checked="checked"<?php endif; ?> value="Yes" /> <strong>Height:</strong> Only cache images</label> that are at least <input type="number" name="sicem_min_height" value="<?php print (int) $sicem_min_height; ?>" min="0" step="10" size="4" /> pixels high</li>
-		<li><label><input type="checkbox" <?php if (!is_null($sicem_mime_whitelist)) : ?> checked="checked"<?php endif; ?> name="sicem_mime_whitelist_use" value="Yes" /> <strong>Permitted Image Types:</strong> <em>Only</em> cache images of certain types:</label>
+		<li><label><input type="checkbox" name="gfi_min_width_use" value="Yes" <?php if (is_numeric($gfi_min_width) and $gfi_min_width > 0) : ?> checked="checked"<?php endif; ?> /> <strong>Width:</strong>  Only cache images</label> that are at least <input type="number" name="gfi_min_width" value="<?php print (int) $gfi_min_width; ?>" min="0" step="10" size="4" /> pixels wide</li>
+		<li><label><input type="checkbox" name="gfi_min_height_use" <?php if (is_numeric($gfi_min_height) and $gfi_min_height > 0) : ?> checked="checked"<?php endif; ?> value="Yes" /> <strong>Height:</strong> Only cache images</label> that are at least <input type="number" name="gfi_min_height" value="<?php print (int) $gfi_min_height; ?>" min="0" step="10" size="4" /> pixels high</li>
+		<li><label><input type="checkbox" <?php if (!is_null($gfi_mime_whitelist)) : ?> checked="checked"<?php endif; ?> name="gfi_mime_whitelist_use" value="Yes" /> <strong>Permitted Image Types:</strong> <em>Only</em> cache images of certain types:</label>
 			<ul class="suboptions">
 			<?php foreach ($imageTypes as $type => $label) : ?>
-			<li><label style="white-space: nowrap"><input type="checkbox" name="sicem_mime_whitelist[]" <?php if (!is_null($sicem_mime_whitelist) and in_array($type, $sicem_mime_whitelist)) : ?> checked="checked"<?php endif; ?> value="<?php print esc_attr($type); ?>" /><?php print $label; ?> (<code><?php print $type; ?></code>)</label></li>
+			<li><label style="white-space: nowrap"><input type="checkbox" name="gfi_mime_whitelist[]" <?php if (!is_null($gfi_mime_whitelist) and in_array($type, $gfi_mime_whitelist)) : ?> checked="checked"<?php endif; ?> value="<?php print esc_attr($type); ?>" /><?php print $label; ?> (<code><?php print $type; ?></code>)</label></li>
 			<?php endforeach; ?>
 			</ul></li>
-		<li><label><input type="checkbox" name="sicem_mime_blacklist_use" <?php if (!is_null($sicem_mime_blacklist)) : ?> checked="checked"<?php endif; ?> value="Yes" /> <strong>Forbidden Image Types:</strong> <em>Don&#8217;t</em> capture images of certain types:</label>
+		<li><label><input type="checkbox" name="gfi_mime_blacklist_use" <?php if (!is_null($gfi_mime_blacklist)) : ?> checked="checked"<?php endif; ?> value="Yes" /> <strong>Forbidden Image Types:</strong> <em>Don&#8217;t</em> capture images of certain types:</label>
 			<ul class="suboptions">
 			<?php foreach ($imageTypes as $type => $label) : ?>
-			<li><label style="white-space: nowrap"><input type="checkbox" name="sicem_mime_blacklist[]" <?php if (!is_null($sicem_mime_blacklist) and in_array($type, $sicem_mime_blacklist)) : ?> checked="checked"<?php endif; ?> value="<?php print esc_attr($type); ?>" /><?php print $label; ?> (<code><?php print $type; ?></code>)</label></li>
+			<li><label style="white-space: nowrap"><input type="checkbox" name="gfi_mime_blacklist[]" <?php if (!is_null($gfi_mime_blacklist) and in_array($type, $gfi_mime_blacklist)) : ?> checked="checked"<?php endif; ?> value="<?php print esc_attr($type); ?>" /><?php print $label; ?> (<code><?php print $type; ?></code>)</label></li>
 			<?php endforeach; ?>
 			</ul></li>
 		</ul></td></tr>
@@ -274,27 +274,27 @@ class SicEm {
 		capturing a local copy of a syndicated image...</p>
 		<?php
 			$page->setting_radio_control(
-				'sicem strip uncacheable images', 'sicem_strip_uncacheable_images',
+				'gfi strip uncacheable images', 'gfi_strip_uncacheable_images',
 				$stripUncacheableImagesSelector, $suisParams
 			);
 		?>
 		</td></tr>
 		</table>
 		<?php
-	} /* SicEm::display_settings() */
+	} /* GrabFeaturedImages::display_settings() */
 	
 	public function save_settings ($params, $page) {
-		if (isset($params['sicem_cache_images'])) :
-			$page->update_setting('cache images', $params['sicem_cache_images']);
-			$page->update_setting('feature captured images', $params['sicem_feature_images']);
-			$page->update_setting('featured image default', $params['sicem_default_featured_image']);
-			$page->update_setting('sicem custom field', $params['sicem_custom_field_name']);
-			$page->update_setting('sicem insert gallery', $params['sicem_insert_gallery']);
+		if (isset($params['gfi_cache_images'])) :
+			$page->update_setting('cache images', $params['gfi_cache_images']);
+			$page->update_setting('feature captured images', $params['gfi_feature_images']);
+			$page->update_setting('featured image default', $params['gfi_default_featured_image']);
+			$page->update_setting('gfi custom field', $params['gfi_custom_field_name']);
+			$page->update_setting('gfi insert gallery', $params['gfi_insert_gallery']);
 			
 			// empty strings mean a null value
 			foreach (array('crop ratio', 'resize') as $key) :
-				$idx = "sicem_" . str_replace(" ", "_", $key);
-				$setting = 'sicem ' . $key;
+				$idx = "gfi_" . str_replace(" ", "_", $key);
+				$setting = 'gfi ' . $key;
 
 				if (strlen(trim($params[$idx])) > 0) :
 					$page->update_setting($setting, $params[$idx]);
@@ -305,27 +305,27 @@ class SicEm {
 
 			// collapse arrays to strings
 			foreach (array('mime_whitelist', 'mime_blacklist') as $key) :
-				if (is_array($params["sicem_$key"])) :
-					$params["sicem_$key"] = implode("|", $params["sicem_$key"]);
+				if (is_array($params["gfi_$key"])) :
+					$params["gfi_$key"] = implode("|", $params["gfi_$key"]);
 				endif;
 			endforeach;
 			
 			// check for enabling checkmark
 			foreach (array('min_width', 'min_height', 'mime_whitelist', 'mime_blacklist') as $key) :
-				if (isset($params["sicem_${key}_use"]) and "yes"==strtolower($params["sicem_${key}_use"])) :
-					$update_to = $params["sicem_${key}"];
+				if (isset($params["gfi_${key}_use"]) and "yes"==strtolower($params["gfi_${key}_use"])) :
+					$update_to = $params["gfi_${key}"];
 				else :
 					$update_to = NULL;
 				endif;
 				
 				$spacedKey = str_replace("_", " ", $key);
-				$page->update_setting("sicem ${spacedKey}", $update_to);
+				$page->update_setting("gfi ${spacedKey}", $update_to);
 			endforeach;
 			
-			$page->update_setting('sicem strip featured image', $params["sicem_strip_featured_image"]);
-			$page->update_setting('sicem strip uncacheable images', $params["sicem_strip_uncacheable_images"]);
+			$page->update_setting('gfi strip featured image', $params["gfi_strip_featured_image"]);
+			$page->update_setting('gfi strip uncacheable images', $params["gfi_strip_uncacheable_images"]);
 		endif;
-	} /* SicEm::save_settings () */
+	} /* GrabFeaturedImages::save_settings () */
 
 	////////////////////////////////////////////////////////////////////////////
 	// FUNCTIONALITY ///////////////////////////////////////////////////////////
@@ -339,7 +339,7 @@ class SicEm {
 			if (is_syndicated()) :				
 				$source = get_syndication_feed_object($post->ID);
 
-				$sfi = $source->setting('sicem strip featured image', 'sicem_strip_featured_image', 'no');
+				$sfi = $source->setting('gfi strip featured image', 'gfi_strip_featured_image', 'no');
 				switch ($sfi) :
 				case 'yes' :
 					$thumbId = get_post_thumbnail_id($post->ID);
@@ -358,7 +358,7 @@ class SicEm {
 					// NOOP
 				endswitch;
 				
-				$ig = $source->setting('sicem insert gallery', 'sicem_insert_gallery', 'no');
+				$ig = $source->setting('gfi insert gallery', 'gfi_insert_gallery', 'no');
 				switch ($ig) :
 				case 'before' :
 					$content = do_shortcode('[gallery]')."\n\n".$content;
@@ -376,7 +376,7 @@ class SicEm {
 		endif;
 		
 		return $content;
-	} /* SicEm::the_content() */
+	} /* GrabFeaturedImages::the_content() */
 
 	public function process_post ($data, $post) {
 		$img_src = FeedWordPressHTML::attributeRegex('img', 'src');
@@ -429,7 +429,7 @@ class SicEm {
 		endif;
 		
 		return $data;
-	} /* function SicEm::process_post () */
+	} /* function GrabFeaturedImages::process_post () */
 
 	public function process_captured_images ($delta) {
 		global $post, $wpdb;
@@ -452,7 +452,7 @@ class SicEm {
 
 			if ((count($imgs) > 0) and !!$imgs[0] and ('yes'==$source->setting('cache images', 'cache_images', 'no'))) :
 				$seekingFeature = ('yes' == $source->setting('feature captured images', 'feature_captured_images', NULL));
-				$customFieldName = trim($source->setting('sicem custom field', 'sicem_custom_field', ''));
+				$customFieldName = trim($source->setting('gfi custom field', 'gfi_custom_field', ''));
 				foreach ($imgs as $img) :
 					
 					$imgGuid = SICWebImage::guid($img);
@@ -465,12 +465,12 @@ class SicEm {
 					
 					if (!$result) : // Attachment not yet created
 						$params = array(
-						"min width" => $source->setting('sicem min width', 'sicem_min_width', 0),
-						"min height" => $source->setting('sicem min height', 'sicem_min_height', 0),
-						"blacklist" => explode("|", $source->setting('sicem mime blacklist', 'sicem_mime_blacklist', NULL)),
-						"whitelist" => explode("|", $source->setting('sicem mime whitelist', 'sicem_mime_whitelist', NULL)),
-						"crop" => $source->setting('sicem crop ratio', 'sicem_crop_ratio', NULL),
-						"resize" => $source->setting('sicem resize', 'sicem_resize', NULL),
+						"min width" => $source->setting('gfi min width', 'gfi_min_width', 0),
+						"min height" => $source->setting('gfi min height', 'gfi_min_height', 0),
+						"blacklist" => explode("|", $source->setting('gfi mime blacklist', 'gfi_mime_blacklist', NULL)),
+						"whitelist" => explode("|", $source->setting('gfi mime whitelist', 'gfi_mime_whitelist', NULL)),
+						"crop" => $source->setting('gfi crop ratio', 'gfi_crop_ratio', NULL),
+						"resize" => $source->setting('gfi resize', 'gfi_resize', NULL),
 						);
 						$img_id = $this->attach_image($img, $post->ID, $params);
 					else :
@@ -501,14 +501,14 @@ class SicEm {
 					$replacement = NULL;
 					if ($attach_id < 0) :
 						$new_url = NULL;
-						if ($source->setting('sicem strip uncacheable images', 'sicem_strip_uncacheable_images', 'no')=='yes') :
-							FeedWordPress::diagnostic('sicem:capture', 'Image  ['.$url.'] not cached; stripping image.');
+						if ($source->setting('gfi strip uncacheable images', 'gfi_strip_uncacheable_images', 'no')=='yes') :
+							FeedWordPress::diagnostic('gfi:capture', 'Image  ['.$url.'] not cached; stripping image.');
 							$replacement = '';
 						else :
-							FeedWordPress::diagnostic('sicem:capture', 'Image  ['.$url.'] not cached; leaving hotlinked image.');							$replacement = NULL;
+							FeedWordPress::diagnostic('gfi:capture', 'Image  ['.$url.'] not cached; leaving hotlinked image.');							$replacement = NULL;
 						endif;
 					else :
-						FeedWordPress::diagnostic('sicem:capture', 'Captured image ['.$url.'] to local URL ['.$new_url.']');
+						FeedWordPress::diagnostic('gfi:capture', 'Captured image ['.$url.'] to local URL ['.$new_url.']');
 						$new_url = wp_get_attachment_url($attach_id);
 						if ($new_url) :
 							$replacement = '$1'.$new_url.'$2';
@@ -541,7 +541,7 @@ class SicEm {
 			endif;
 		endwhile;
 
-	} /* SicEm::process_captured_images () */
+	} /* GrabFeaturedImages::process_captured_images () */
 
 	////////////////////////////////////////////////////////////////////////////
 	// UTILITY FUNCTIONS ///////////////////////////////////////////////////////
@@ -586,7 +586,7 @@ class SicEm {
 		endif;
 		return $success;
 
-	} /* SicEm::insert_revision () */
+	} /* GrabFeaturedImages::insert_revision () */
 	
 	public function fix_revision_meta ($revision_id) {
 		global $wpdb;
@@ -599,7 +599,7 @@ class SicEm {
 		SET post_author={$this->post->post_author}
 		WHERE post_type = 'revision' AND ID='$revision_id'
 		");
-	} /* SicEm::fix_revision_meta () */
+	} /* GrabFeaturedImages::fix_revision_meta () */
 	
 	public function attach_image ($url, $to, $args = array()) {
 		$attach_id = NULL;
@@ -623,14 +623,14 @@ class SicEm {
 			$timeout = 60;
 		endif;
 		
-		FeedWordPress::diagnostic('sicem:capture:http', "HTTP &raquo;&raquo; GET [$url]");
+		FeedWordPress::diagnostic('gfi:capture:http', "HTTP &raquo;&raquo; GET [$url]");
 
-		$params = apply_filters('sicem_remote_request_params', array(
+		$params = apply_filters('gfi_remote_request_params', array(
 			'headers' => $headers,
 			'timeout' => $timeout,
 		), $url);
 	
-		$http = apply_filters('sicem_remote_request', NULL, $url, $params);
+		$http = apply_filters('gfi_remote_request', NULL, $url, $params);
 		if (is_null($http)) :
 			$http = wp_remote_request($url, $params);
 		endif;
@@ -648,7 +648,7 @@ class SicEm {
 					or $imagesize[1] < $minHeight
 					or !$this->allowedtype($imagesize['mime'], $args)
 				) :
-					FeedWordPress::diagnostic('sicem:capture:reject',
+					FeedWordPress::diagnostic('gfi:capture:reject',
 						"Image [$url] rejected. " 
 						.(($imagesize[0] < $minWidth) ? 'width: '.$imagesize[0].' &lt; '.$minWidth.'. ' : '')
 						.(($imagesize[1] < $minHeight) ? 'height: '.$imagesize[1].' &lt; '.$minHeight.'. ':'')
@@ -689,11 +689,11 @@ class SicEm {
 			endif;
 
 			// Send it to the diagnostix module.
-			FeedWordPress::diagnostic('sicem:capture:error', "Failed GET [$url] &laquo;&laquo; ".$error_message);
+			FeedWordPress::diagnostic('gfi:capture:error', "Failed GET [$url] &laquo;&laquo; ".$error_message);
 		endif;
 
 		return $attach_id;
-	} /* SicEm::attach_image () */
+	} /* GrabFeaturedImages::attach_image () */
 	
 	public function allowedtype ($type, $args) {
 		if (!isset($args['blacklist'])) : $args['blacklist'] = NULL; endif;
@@ -725,13 +725,13 @@ class SicEm {
 			endif;
 		endforeach;
 		return false;
-	} /* SicEm::allowedtype() */
+	} /* GrabFeaturedImages::allowedtype() */
 
 	public function fix_async_upload_image() {
 		if (isset($_REQUEST['attachment_id'])) {
 			$GLOBALS['post'] = get_post($_REQUEST['attachment_id']);
 		}
-	} /* SicEm::fix_async_upload_iamge () */
+	} /* GrabFeaturedImages::fix_async_upload_iamge () */
 
 	/**
 	 * Test context to see if the uploader is being used for the image widget or for other regular uploads
@@ -750,7 +750,7 @@ class SicEm {
 			return true;
 		endif;
 		return false;
-	} /* SicEm::is_sic_pick_context () */
+	} /* GrabFeaturedImages::is_sic_pick_context () */
 	
 	/**
 	 * Somewhat hacky way of replacing "Insert into Post" with "Insert into Widget"
@@ -768,7 +768,7 @@ class SicEm {
 			}
 		}
 		return $translated_text;
-	} /* SicEm::replace_text_in_thickbox() */
+	} /* GrabFeaturedImages::replace_text_in_thickbox() */
 	
 	/**
 	 * Filter image_end_to_editor results
@@ -817,7 +817,7 @@ EOJSON;
 			$ret = $html;
 		endif;
 		return $ret;
-	} /* SicEm::image_send_to_editor () */
+	} /* GrabFeaturedImages::image_send_to_editor () */
 
 	/**
 	 * Remove from url tab until that functionality is added to widgets.
@@ -831,9 +831,9 @@ EOJSON;
 			unset($tabs['type_url']);
 		}
 		return $tabs;
-	} /* SicEm::media_upload_tabs () */
+	} /* GrabFeaturedImages::media_upload_tabs () */
 
-} /* class SicEm */
+} /* class GrabFeaturedImages */
 
-$sicEmAddOn = new SicEm;
+$gfiAddOn = new GrabFeaturedImages;
 
