@@ -84,64 +84,38 @@ class GrabFeaturedImages {
 	} /* GrabFeaturedImages::add_settings_box() */
 
 	public function display_settings ($page, $box = NULL) {
-			$upload = wp_upload_dir( /*now=*/ NULL );
-			$uploadUrl = $upload['url'] . '/' . md5('http://example.com/example.jpg') . '.jpg';
-
-			$cacheImagesSelector = array(
-			"no" => "Hotlink the image at its original URL<div class=\"setting-description\">Ex.: <code>&lt;img src=&quot;%s&quot;&gt;</code></div>",
-			"yes" => "Capture a copy of the image on this website and use the local copy<div class=\"setting-description\">Ex.: <code>&lt;img src=&quot;%s&quot;&gt;</code></div>",
-			);
-
-			$urls = array(
-			"no" => 'http://example.com/example.jpg',
-			"yes" => $uploadUrl
-			);
-
-			$labels = array();
-			foreach ($cacheImagesSelector as $index => $value) :
-				$cacheImagesSelector[$index] = sprintf(__($value), $urls[$index]);
-				$labels[$index] = __(preg_replace('/<div.*$/', '', $value));
-			endforeach;
-
-			$params = array(
-			'input-name' => 'gfi_cache_images',
-			'setting-default' => NULL,
-			'global-setting-default' => 'no',
-			'labels' => $labels,
-			'default-input-value' => 'default',
-			);
 			
-			$featureImagesSelector = array(
-			"no" => __("Just display the image"),
-			"yes" => __("Use the image as the Featured Image for the syndicated post"),
-			);
+		$featureImagesSelector = array(
+		"no" => __("Just display the image"),
+		"yes" => __("Use the image as the Featured Image for the syndicated post"),
+		);
 			
-			$fisParams = array(
-			'input-name' => 'gfi_feature_images',
-			'setting-default' => NULL,
-			'global-setting-default' => 'no',
-			'default-input-value' => 'default',
-			);
-			
-			$insertGallerySelector = array(
-			"no" => __("<em>Leave it alone.</em> Just show the post as it appeared on the feed"),
-			"before" => __("<em>Gallery above post.</em> Insert a gallery of attached images at the top of syndicated posts."),
-			"after" => __("<em>Gallery below post.</em> Insert a gallery of attached images at the bottom of syndicated posts."),
-			);
+		$fisParams = array(
+		'input-name' => 'gfi_feature_images',
+		'setting-default' => NULL,
+		'global-setting-default' => 'no',
+		'default-input-value' => 'default',
+		);
+		
+		$insertGallerySelector = array(
+		"no" => __("<em>Leave it alone.</em> Just show the post as it appeared on the feed"),
+		"before" => __("<em>Gallery above post.</em> Insert a gallery of attached images at the top of syndicated posts."),
+		"after" => __("<em>Gallery below post.</em> Insert a gallery of attached images at the bottom of syndicated posts."),
+		);
 
-			$igsParams = array(
-			'input-name' => 'gfi_insert_gallery',
-			'setting-default' => NULL,
-			'global-setting-default' => 'no',
-			'default-input-value' => 'default',
-			);
-			
-			$globalDefaultFeaturedImage = get_option('feedwordpress_featured_image_default', NULL);
-			if ($page->for_feed_settings()) :
-				$defaultFeaturedImage = $page->link->setting('featured image default', 'featured_image_default', NULL);
-			else :
-				$defaultFeaturedImage = $globalDefaultFeaturedImage;
-			endif;
+		$igsParams = array(
+		'input-name' => 'gfi_insert_gallery',
+		'setting-default' => NULL,
+		'global-setting-default' => 'no',
+		'default-input-value' => 'default',
+		);
+		
+		$globalDefaultFeaturedImage = get_option('feedwordpress_featured_image_default', NULL);
+		if ($page->for_feed_settings()) :
+			$defaultFeaturedImage = $page->link->setting('featured image default', 'featured_image_default', NULL);
+		else :
+			$defaultFeaturedImage = $globalDefaultFeaturedImage;
+		endif;
 			
 			$customFieldName = $page->setting('gfi custom field', NULL);
 			
@@ -186,15 +160,6 @@ class GrabFeaturedImages {
 		</style>
 
 		<table class="edit-form narrow">
-		<tr><th scope="row"><?php _e('Capture images:'); ?></th>
-		<td><p>If a syndicated post includes an image located at <code>http://example.com/example.jpg</code>, FeedWordPress should...</p>
-		<?php
-			$page->setting_radio_control(
-				'cache images', 'cache_images',
-				$cacheImagesSelector, $params
-			);
-		?></td></tr>
-		
 		<tr><th scope="row"><?php _e('Feature images:'); ?></th>
 		<td><p>When FeedWordPress captures a local copy of a syndicated image...</p>
 		<?php
@@ -227,14 +192,6 @@ class GrabFeaturedImages {
 		<div><label>Name: <input type="text" name="gfi_custom_field_name" value="<?php print esc_attr($customFieldName); ?>" size="15" placeholder="custom field name" /></label>
 		<div class="setting-description">Leave blank if you don't need to store the URL.</div></div></td></tr>
 		
-		<tr><th scope="row"><?php _e('Display Image Gallery with Post:'); ?></th>
-		<td><p style="margin-top:0px">When WordPress displays a syndicated post with captured images attached to it...</p>
-		<?php
-			$page->setting_radio_control(
-				'gfi insert gallery', 'gfi_insert_gallery',
-				$insertGallerySelector, $igsParams);
-		?></td></tr>
-
 		<tr><th scope="row"><?php _e('Image Size: '); ?></th>
 		<td>
 <?php
@@ -284,12 +241,10 @@ class GrabFeaturedImages {
 	} /* GrabFeaturedImages::display_settings() */
 	
 	public function save_settings ($params, $page) {
-		if (isset($params['gfi_cache_images'])) :
-			$page->update_setting('cache images', $params['gfi_cache_images']);
+		if (isset($params['gfi_feature_images'])) :
 			$page->update_setting('feature captured images', $params['gfi_feature_images']);
 			$page->update_setting('featured image default', $params['gfi_default_featured_image']);
 			$page->update_setting('gfi custom field', $params['gfi_custom_field_name']);
-			$page->update_setting('gfi insert gallery', $params['gfi_insert_gallery']);
 			
 			// empty strings mean a null value
 			foreach (array('crop ratio', 'resize') as $key) :
@@ -358,20 +313,6 @@ class GrabFeaturedImages {
 					// NOOP
 				endswitch;
 				
-				$ig = $source->setting('gfi insert gallery', 'gfi_insert_gallery', 'no');
-				switch ($ig) :
-				case 'before' :
-					$content = do_shortcode('[gallery]')."\n\n".$content;
-					break;
-				case 'after' :
-					$content = $content."\n\n".do_shortcode('[gallery]');
-					break;
-					
-				// Leave it.
-				case 'no' :
-				default :
-					// NOOP
-				endswitch;
 			endif;
 		endif;
 		
@@ -450,7 +391,7 @@ class GrabFeaturedImages {
 			$source = get_syndication_feed_object($post->ID);
 			$replacements = array();
 
-			if ((count($imgs) > 0) and !!$imgs[0] and ('yes'==$source->setting('cache images', 'cache_images', 'no'))) :
+			if ((count($imgs) > 0) and !!$imgs[0] and ('yes'==$source->setting('feature captured images', 'feature_captured_images', 'no'))) :
 				$seekingFeature = ('yes' == $source->setting('feature captured images', 'feature_captured_images', NULL));
 				$customFieldName = trim($source->setting('gfi custom field', 'gfi_custom_field', ''));
 				foreach ($imgs as $img) :
