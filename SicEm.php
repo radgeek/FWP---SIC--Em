@@ -1,8 +1,8 @@
 <?php
 /*
-Plugin Name: FWP+: Grab Featured Images
+Plugin Name: FWP+: GAFFer (Grab All Fulltext & Feature images)
 Plugin URI: https://github.com/radgeek/FWP---SIC--Em
-Description: A FeedWordPress filter that locally caches images in the feeds you syndicate. Images are stored in your WordPress uploads directory.
+Description: A FeedWordPress add-on that allows you to grab full-text contents and make a best guess at setting featured images for syndicated content.
 Author: Charles Johnson
 Version: 2017.0820
 Author URI: http://projects.radgeek.com
@@ -83,15 +83,50 @@ class GrabFeaturedImages {
 	
 	public function add_settings_box ($page) {
 		add_meta_box(
-			/*id=*/ "feedwordpress_{$this->name}_box",
+			/*id=*/ "feedwordpress_{$this->name}_box_0",
+			/*title=*/ __("Full HTML of Posts"),
+			/*callback=*/ array(&$this, 'display_full_text_settings'),
+			/*page=*/ $page->meta_box_context(),
+			/*context=*/ $page->meta_box_context()
+		);
+		add_meta_box(
+			/*id=*/ "feedwordpress_{$this->name}_box_1",
 			/*title=*/ __("Featured Images"),
-			/*callback=*/ array(&$this, 'display_settings'),
+			/*callback=*/ array(&$this, 'display_feature_image_settings'),
 			/*page=*/ $page->meta_box_context(),
 			/*context=*/ $page->meta_box_context()
 		);
 	} /* GrabFeaturedImages::add_settings_box() */
 
-	public function display_settings ($page, $box = NULL) {
+	public function display_full_text_settings ($page, $box = NULL) {
+		$grabFullHTMLSelector = array(
+		"no" => __("<strong>Use contents from feed:</strong> Keep the contents or excerpt provided by the feed"),
+		"yes" => __("<strong>Retrieve full text from web:</strong> Attempt to retrieve full text from <code>http://example.com/page/1</code>, using the included link"),
+		);
+		$gfhParams = array(
+		'input-name' => "gfi_grab_full_html",
+		"setting-default" => NULL,
+		"global-setting-default" => FWPGFI_GRAB_FULL_HTML_DEFAULT,
+		"default-input-value" => 'default',
+		);
+?>
+		<table class="edit-form narrow">
+		<tbody>
+		<tr><th scope="row"><?php _e('Retrieve full HTML:'); ?></th>
+		<td><p>When a syndicated post includes a short text description and a
+		link to the full story at <code>http://example.com/page/1</code>,
+		<?php
+			$page->setting_radio_control(
+				'grab full html', 'grab_full_html',
+				$grabFullHTMLSelector, $gfhParams
+			);
+		?></td></tr>
+		</tbody>
+		</table>
+<?php
+	} /* GrabFeaturedImages::display_full_text_settings() */
+
+	public function display_feature_image_settings ($page, $box = NULL) {
 			
 		$featureImagesSelector = array(
 		"no" => __("Just display the image"),
@@ -100,19 +135,6 @@ class GrabFeaturedImages {
 			
 		$fisParams = array(
 		'input-name' => 'gfi_feature_images',
-		'setting-default' => NULL,
-		'global-setting-default' => 'no',
-		'default-input-value' => 'default',
-		);
-		
-		$insertGallerySelector = array(
-		"no" => __("<em>Leave it alone.</em> Just show the post as it appeared on the feed"),
-		"before" => __("<em>Gallery above post.</em> Insert a gallery of attached images at the top of syndicated posts."),
-		"after" => __("<em>Gallery below post.</em> Insert a gallery of attached images at the bottom of syndicated posts."),
-		);
-
-		$igsParams = array(
-		'input-name' => 'gfi_insert_gallery',
 		'setting-default' => NULL,
 		'global-setting-default' => 'no',
 		'default-input-value' => 'default',
@@ -148,17 +170,6 @@ class GrabFeaturedImages {
 			'default-input-value' => 'default',
 			);
 			
-			$grabFullHTMLSelector = array(
-			"no" => __("<strong>Use contents from feed:</strong> Keep the contents or excerpt provided by the feed"),
-			"yes" => __("<strong>Retrieve full text from web:</strong> Attempt to retrieve full text from <code>http://example.com/page/1</code>, using the included link"),
-			);
-			$gfhParams = array(
-			'input-name' => "gfi_grab_full_html",
-			"setting-default" => NULL,
-			"global-setting-default" => FWPGFI_GRAB_FULL_HTML_DEFAULT,
-			"default-input-value" => 'default',
-			);
-
 			
 			$stripUncacheableImagesSelector = array(
 			'no' => 'Leave the image in the post with a hotlink to the original image location',
@@ -179,15 +190,6 @@ class GrabFeaturedImages {
 
 		<table class="edit-form narrow">
 		<tbody>
-		<tr><th scope="row"><?php _e('Retrieve full HTML:'); ?></th>
-		<td><p>When a syndicated post includes a short text description and a
-		link to the full story at <code>http://example.com/page/1</code>,
-		<?php
-			$page->setting_radio_control(
-				'grab full html', 'grab_full_html',
-				$grabFullHTMLSelector, $gfhParams
-			);
-		?></td></tr>
 
 		<tr><th scope="row"><?php _e('Feature images:'); ?></th>
 		<td><p>When FeedWordPress finds images in a syndicated post...</p>
