@@ -15,6 +15,10 @@ define('FWPGFI_GRAB_FULL_HTML_DEFAULT', 'no');
 define('FWPGFI_PROCESS_POSTS_MAX', 70);
 define('FWPGFI_FULL_HTML_PRE', '<div class="feedwordpress-gaffer-full-text">');
 define('FWPGFI_FULL_HTML_POST', '</div>');
+define('FWPGFI_QUEUE_LABEL', 'GAFFer Post Processing Queue');
+define('FWPGFI_FULL_HTML_ROOT_ELEMENTS', "article//*[@class='entry-content']\narticle//*[@class='entry']\narticle\nmain\nbody\n*");
+define('FWPGFI_FULL_HTML_CONTENT_FILTER_OUT', "script|style|header|footer|form");
+define('FWPGFI_FULL_HTML_CONTENT_FILTER_IN', "h3|h4|h5|h6|p|hr|br|ul|ol|dl|blockquote|address|pre|table|figure|figcaption|img|audio|video|embed|object|iframe|canvas");
 
 // Get the path relative to the plugins directory in which FWP is stored
 preg_match (
@@ -39,6 +43,7 @@ class GrabFeaturedImages {
 		add_filter('syndicated_post', array(&$this, 'process_post'), 10, 2);
 		add_filter('feedwordpress_update_complete', array(&$this, 'process_full_html'), -2000, 1);
 		add_filter('feedwordpress_update_complete', array(&$this, 'process_captured_images'), -1000, 1);
+		add_action('feedwordpress_admin_page_syndication_meta_boxes', array(&$this, 'add_queue_box'));
 		add_action('feedwordpress_admin_page_posts_meta_boxes', array(&$this, 'add_settings_box'));
 		add_action('feedwordpress_admin_page_posts_save', array(&$this, 'save_settings'), 10, 2);
 		add_filter('feedwordpress_diagnostics', array(&$this, 'diagnostics'), 10, 2);
@@ -77,21 +82,69 @@ class GrabFeaturedImages {
 		$sect = 'Grab Featured Images'; $pre = "gfi";
 		$diag[$sect]["$pre:capture"] = 'as syndicated images are captured or rejected for local copies';
 		$diag[$sect]["$pre:capture:error"] = 'when there is an error encountered when trying to capture a local copy of an image'; 
-		$diag[$sect]["$pre:capture:http"] = 'as the HTTP GET request is sent to capture a local copy of a syndicated image';
+		$diag[$sect]["$pre:capture:http"] = 'as the HTTP GET request is sent to capture a local copy of a syndicated image or full HTML';
+		$diag[$sect]["$pre:capture:html"] = 'as GAFFer attempts to extract elements from recently-retrieved full HTML';
 		$diag[$sect]["$pre:capture:reject"] = 'when a captured image is rejected instead of being kept as a local copy';
 		return $diag;
 	} /* GrabFeaturedImages::diagnostics () */
 	
+	function add_queue_box ($page) {
+		add_meta_box(
+			/*id=*/ "feedwordpress_{$this->name}_queue_box",
+			/*title=*/ __(FWPGFI_QUEUE_LABEL),
+			/*callback=*/ array(&$this, 'display_queue'),
+			/*page=*/ $page->meta_box_context(),
+			/*context=*/ $page->meta_box_context()
+		);
+	} /* GrabFeaturedImages::add_queue_box() */
+
+	function display_queue ($page, $box = NULL) {
+		$posts = array(); $urls = array();
+		$q = new WP_Query(array(
+		'meta_key' => '_syndicated_full_html_capture',
+		'posts_per_page' => -1,
+		'order' => 'ASC',
+		));
+		while ($q->have_posts()) : $q->the_post();
+			$posts[$q->post->ID] = $q->post;
+			$urls[$q->post->ID] = get_post_meta($q->post->ID, '_syndicated_full_html_capture');
+		endwhile;
+?>
+<table style="width: 100%">
+<thead>
+<tr>
+<th>Status</th>
+<th>Post</th>
+<th>Date</th>
+<th>URL</th>
+</tr>
+</thead>
+<tbody>
+<?php foreach ($posts as $ID => $p) : ?>
+<tr>
+<td><?php print ucfirst($p->post_status); ?></td>
+<td><?php print $p->post_title; ?></td>
+<td><?php print $p->post_date; ?></td>
+<td><?php foreach ($urls[$ID] as $url) :
+	print '<a href="'.$url.'">'.feedwordpress_display_url($url)."</a>";
+endforeach; ?></td>
+</tr>
+<?php endforeach; ?>
+</body>
+</table>
+<?php
+	}
+
 	public function add_settings_box ($page) {
 		add_meta_box(
-			/*id=*/ "feedwordpress_{$this->name}_box_0",
+			/*id=*/ "feedwordpress_{$this->name}_full_text_settings_box",
 			/*title=*/ __("Full HTML of Posts"),
 			/*callback=*/ array(&$this, 'display_full_text_settings'),
 			/*page=*/ $page->meta_box_context(),
 			/*context=*/ $page->meta_box_context()
 		);
 		add_meta_box(
-			/*id=*/ "feedwordpress_{$this->name}_box_1",
+			/*id=*/ "feedwordpress_{$this->name}_feature_image_settings_box",
 			/*title=*/ __("Featured Images"),
 			/*callback=*/ array(&$this, 'display_feature_image_settings'),
 			/*page=*/ $page->meta_box_context(),
@@ -122,6 +175,16 @@ class GrabFeaturedImages {
 				$grabFullHTMLSelector, $gfhParams
 			);
 		?></td></tr>
+		<?php
+		if ($page->for_default_settings()) :
+			$value = $this->process_posts_max();
+		?>
+		<tr><th scope="row"><?php _e('Queued web requests:'); ?></th>
+		<td><p>Process <input type="number" min="-1" step="1" size="4" value="<?php print esc_attr($value); ?>" name="fwpgfi_process_posts_max" /> queued requests per update cycle.</p>
+		<div class="setting-description">If you start seeing long delays between when posts are syndicated and when their full text is retrieved &#8212; or if posts start piling up in the <?php print FWPGFI_QUEUE_LABEL; ?> &#8212; you may need to adjust this setting higher. If you start noticing that update processes take too long to complete, you may need to adjust this setting lower. Use a value of <code>-1</code> to force FWP+: GAFFer to process <em>all</em> queued requests during <em>every</em> update cycle.</div>
+		</td></tr>
+		<?php endif; ?>
+		
 		</tbody>
 		</table>
 <?php
@@ -792,9 +855,45 @@ class GrabFeaturedImages {
 				switch ($mimetype) :
 				case 'text/html' :
 				case 'application/xhtml+xml' :
-					if (preg_match(':<body (\s+[^>]*)? > (.+) </body>:six', $data, $ref)) :
-						$data = $ref[2];
+
+					$oDoc = new DOMDocument("1.0", get_bloginfo('charset'));
+
+					// "Error suppression is not the proper way of dealing with this issue," StackOverflow Dude tells me, and yet.... 
+					// HTML5 content, which is now completely pervasive, triggers errors that libxml still doesn't allow you to bypass
+					// so let's just EAT THEM ALL UP. https://stackoverflow.com/questions/6090667/php-domdocument-errors-warnings-on-html5-tags
+					libxml_use_internal_errors(true);
+
+					// Let's try to head off potential encoding issues at the pass here.
+					$data = mb_convert_encoding($data, 'html-entities', mb_detect_encoding($data));
+					$oDoc->loadHTML($data, LIBXML_ERR_NONE);
+					$oXPath = new DOMXpath($oDoc);
+					libxml_clear_errors();
+
+					$mainElements = $source->setting('fwpgfi root elements', 'fwpgfi_root_elements', FWPGFI_FULL_HTML_ROOT_ELEMENTS);
+					$aElements = array_map(function ($item) { return trim($item); }, explode("\n", $mainElements));
+					$outFilter = explode("|", $source->setting('fwpgfi filter out', 'fwpgfi_filter_out', FWPGFI_FULL_HTML_CONTENT_FILTER_OUT));
+					$inFilter = $source->setting('fwpgfi filter in', 'fwpgfi_filter_in', FWPGFI_FULL_HTML_CONTENT_FILTER_IN);
+					if ($inFilter != '*') :
+						$inFilter = explode("|", $inFilter);
 					endif;
+
+					foreach ($aElements as $sElement) :
+
+						if ($sElement[0] != '/') :
+							$sElement = '//' . $sElement;
+						endif;
+
+						$cEls = $oXPath->query($sElement);
+						if ($cEls->length > 0) :
+							FeedWordPress::diagnostic('gfi:capture:html', "HTML Parsing: Found viable root element [$sElement] (".__METHOD__.")");
+							$data = '';
+							foreach ($cEls as $oEl) :
+								self::scrubHTMLElements($oEl, $outFilter, $inFilter);
+								$data .= self::DOMInnerHTML($oEl);
+							endforeach;
+							break; // exit foreach
+						endif;
+					endforeach;
 					$text = FWPGFI_FULL_HTML_PRE.$data.FWPGFI_FULL_HTML_POST;
 				endswitch;
 			endif;
@@ -1044,7 +1143,79 @@ EOJSON;
 		return $tabs;
 	} /* GrabFeaturedImages::media_upload_tabs () */
 
+	static public function scrubHTMLElements(DOMNode $element, $outFilter, $inFilter, $level = 0) {
+		$children = $element->childNodes;
+
+		if (!is_null($children)) :
+			$toRemove = array();
+			foreach ($children as $child) :
+				if (in_array(strtolower($child->nodeName), $outFilter)) :
+					// Blacklisted element. Scrub this out and all of its children.
+					$toRemove[] = $child;
+				endif;
+			endforeach;
+
+			foreach ($toRemove as $child) :
+				$element->removeChild($child);
+				break;
+			endforeach;
+		endif;
+	
+		$children = $element->childNodes;
+		if (!is_null($children)) :
+			$toDo = array();
+			foreach ($element->childNodes as $child) :
+				if (
+					(is_string($inFilter) and '*' == $inFilter)
+					or (is_array($inFilter) and in_array(strtolower($child->nodeName), $inFilter))
+				) :
+
+					// Whitelisted element. Allow this and all of its children EXCEPT for blacklisted elements.
+					$toDo[] = array("retain", $child);
+				else :
+					$toDo[] = array("descend", $child);
+				endif;
+			endforeach;
+
+			foreach ($toDo as $pair) :
+				list($action, $child) = $pair;
+				switch ($action) :
+				case 'retain' :
+					self::scrubHTMLElements($child, $outFilter, '*', $level+1);
+					break;
+				case 'descend' :
+					self::scrubHTMLElements($child, $outFilter, $inFilter, $level+1);
+					if (count($child->childNodes) > 0) :
+						$toBubble = array();						
+						foreach ($child->childNodes as $grandchild) :
+							$toBubble[] = $grandchild;
+						endforeach;
+
+						foreach ($toBubble as $grandchild) :
+							$cGC = $grandchild->cloneNode(/*deep=*/ true);
+							$element->insertBefore($cGC, $child);
+						endforeach;
+					endif;
+					$element->removeChild($child);
+					break;
+				default :
+					// NOOP
+				endswitch;
+			endforeach;
+		endif;
+	}
+	static public function DOMinnerHTML(DOMNode $element) { 
+	    $innerHTML = ""; 
+	    $children  = $element->childNodes;
+
+	    foreach ($children as $child) :
+		$innerHTML .= $element->ownerDocument->saveHTML($child);
+	    endforeach;
+
+	    return $innerHTML; 
+	} 
 } /* class GrabFeaturedImages */
+
 
 $gfiAddOn = new GrabFeaturedImages;
 
