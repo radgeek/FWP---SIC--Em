@@ -30,7 +30,7 @@ preg_match (
 if (isset($ref[1])) :
 	$gfi_path = $ref[1];
 else : // Something went wrong. Let's just guess.
-	$gfi_path = 'fwp-grab-featured-images';
+	$gfi_path = 'fwp-gaffer';
 endif;
 
 class GrabFeaturedImages {
