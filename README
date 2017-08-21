@@ -1,37 +1,30 @@
-FWP+: SIC 'Em (Syndicated Image Cacher) is an add-on for the [FeedWordPress](http://feedwordpress.radgeek.com/) feed aggregator.
+FWP+: GAFFer (Get All Fulltext & Feature images) is an add-on for the [FeedWordPress](http://feedwordpress.radgeek.com/) feed aggregator.
 
 You might want to use it if you:
 
-* Need local copies of images from your feeds rather than hotlinks
-* Want your Theme to make use of images appearing in your syndicated posts for Featured Images or Thumbnails
-* Want to make use of images appearing in your syndicated posts with other WordPress features that rely on the post's Media Gallery
-* Want to crop or resize images appearing on your feeds
+* Want your Theme to make use of images appearing in your syndicated post for Feature Images or Thumbnails. (You can also do this with the FWP+: SIC 'Em add-on, but SIC 'Em includes many more features that you may not need and may not want to deal with configuring.)
+* Want to try to retrieve full-text content from a feed that provides only short descriptions or excerpts.
 
 Overview
 ========
-HTML content provided by feeds often contains references to images. But normally the feed content only contains hotlinks to those images,
-not their content. So when FeedWordPress syndicates an article, the
-original URLs are preserved -- any images within the post will be
-hotlinked rather than copied over to the Media Gallery on your local
-FeedWordPress installation.
+Many WordPress Themes support Feature Images or Thumbnails for posts. But usually the content of syndicated feeds does not provide any way for the feed producer to indicate a Feature Image or Thumbnail for feed consumers to use when syndicating the post. So by default, when you syndicate new posts in FeedWordPress, they are imported without any Feature Image. This add-on allows you
+(1) to make a best-guess at the likely Feature Image for a post, using the images that appear in the syndicated post.
 
-If you need local copies of the images that you syndicate, FWP+: SIC
-'Em provides this behavior. Images referred to on the feed will be
-copied over to your local web host, imported into WordPress's Media
-Gallery, and syndicated posts will be revised to refer to the new local
-copies rather than hotlinking the original URLs.
+(2) Many feeds provide only short text descriptions or excerpts for posts. If you have permission to access their full content, but the feed producer doesn't place that content where you'd expect, directly on the feed, then with this add-on you can try to retrieve full-text content, or something close to it, by scraping the content of the web pages linked to each post.
 
 Installation
 ============
-1. After downloading the latest version of FWP+: SIC 'Em, unzip the installation package and drop the contents into your `wp-contents/plugins` directory on the web host where you've installed FeedWordPress.
+1. After downloading the latest version of FWP+: GAFFer, unzip the installation package and drop the contents into your `wp-contents/plugins` directory on the web host where you've installed FeedWordPress.
 
 2. Log in to your WordPress admin interface, and go to the Plugins page.
 
-3. In the list of available plugins, find FWP+: SIC 'Em, and click on the Activate link.
+3. In the list of available plugins, find FWP+: GAFFer, and click on the Activate link.
 
 4. After you've activated the plugin, go to your FeedWordPress admin interface, under **Syndication > Posts & Links**. If you want to set up image caching for all of your feeds at once, just scroll down. If you want to set up different settings for different feeds, use the grey drop-down box to change the settings page from "- default for all feeds -" to the name of the particular subscription that you want to configure.
 
-5. Scroll down to find a new settings panel, called **Syndicated Images**. To turn on basic image caching, change the first setting, **Capture Images**, from "Hotlink the image at its original URL" to "Capture a copy of the image on this website and use the local copy." Configure the other settings according to your needs, then hit the Save Changes button at the bottom of the page.
+5. Scroll down to find two new settings panels, one called **Full HTML of Posts** and the other called **Featured Images**. To turn on basic full HTML retrieval, go to the panel labeled **Full HTML of Posts**, and change the setting labeled **Retrieve full HTML**, from "Use contents from feed" to "Retrieve full text from the web." To turn on Feature Image retrieval, go to the panel labeled **Featured Images**, and change the first setting, **Feature Images**, from "Just display the image" to "Capture a local copy of the first image to use as the Featured Image for the syndicated post."
+
+5. More advanced features allow you to set a default Feature Image (for any syndicated posts that don't include at least one image in them), to decide whether Feature Images should be left in the post content or stripped out of them after they are used to set the WordPress Feature Image or Thumbnail setting (the best thing to do here probably depends on your feed), and to do advanced filtering of images to consider for the Feature Image, based on their size or file type.
 
 6. The settings should begin to take effect with the next update from your subscribed feeds.
 
