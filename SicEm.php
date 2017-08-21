@@ -684,6 +684,10 @@ endforeach; ?></td>
 							) :
 								update_post_meta($post->ID, '_thumbnail_id', $img_id);
 								$seekingFeature = false;
+								
+								/*FIXME: Make this logic configurable*/
+								$zapit = true;
+								break; // exit foreach
 							endif;
 						endif;
 						
