@@ -488,15 +488,17 @@ endforeach; ?></td>
 			"_syndicated_image_featured" => array(),
 		);
 
-		$img_src = FeedWordPressHTML::attributeRegex('img', 'src');
-		
 		# (1) Match any image elements from HTML in the syndicated item
-		preg_match_all($img_src, $post_content, $refs, PREG_SET_ORDER);
-		foreach ($refs as $matches) :
-			$src = FeedWordPressHTML::attributeMatch($matches);
-			$ret['_syndicated_image_capture'][] = $src['value'];
+
+		$oDoc = new DOMDocument;
+		@$oDoc->loadHTML($post_content);
+		$imgTags = $oDoc->getElementsByTagName('img');
+		foreach ($imgTags as $imgTag) :
+			if (!preg_match('/^data:.*$/i', $imgTag->getAttribute('src'))) :
+				$ret['_syndicated_image_capture'][] = $imgTag->getAttribute('src');
+			endif;
 		endforeach;
-		
+
 		# (2) Check for a specially marked-up indicator of a thumbnail/Feature Image link
 		if (is_array($thumb_links) and count($thumb_links) > 0) :
 			foreach ($thumb_links as $href) :
