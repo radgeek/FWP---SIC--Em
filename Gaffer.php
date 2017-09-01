@@ -138,6 +138,7 @@ class GrabFeaturedImages {
 		$diag[$sect]["$pre:capture:error"] = 'when there is an error encountered when trying to capture a local copy of an image'; 
 		$diag[$sect]["$pre:capture:http"] = 'as the HTTP GET request is sent to capture a local copy of a syndicated image or full HTML';
 		$diag[$sect]["$pre:capture:html"] = 'as GAFFer attempts to extract elements from recently-retrieved full HTML';
+		$diag[$sect]["$pre:capture:htmltree"] = 'as GAFFer parses recently-retrieved full HTML and forms a detailed parse tree (advanced)';
 		$diag[$sect]["$pre:capture:reject"] = 'when a captured image is rejected instead of being kept as a local copy';
 		return $diag;
 	} /* GrabFeaturedImages::diagnostics () */
@@ -1335,7 +1336,7 @@ EOJSON;
 		endif;
 
 		$tagName = self::NodeToHTML($element);
-		FeedWordPress::diagnostic('gfi:capture:html', "HTML Parsing: ".str_repeat("===", $level)." Considering children of element [{$tagName}]");
+		FeedWordPress::diagnostic('gfi:capture:htmltree', "HTML Parsing: ".str_repeat("===", $level)." Considering children of element [{$tagName}]");
 
 		$children = $element->childNodes;
 
@@ -1365,9 +1366,8 @@ EOJSON;
 
 			foreach ($toRemove as $child) :
 				$tagName = self::NodeToHTML($child);
-				FeedWordPress::diagnostic('gfi:capture:html', "HTML Parsing: ".str_repeat("===", $level+1)." Scrubbing blacklisted element [$tagName]");
+				FeedWordPress::diagnostic('gfi:capture:htmltree', "HTML Parsing: ".str_repeat("===", $level+1)." Scrubbing blacklisted element [$tagName]");
 				$element->removeChild($child);
-				break;
 			endforeach;
 		endif;
 	
@@ -1402,11 +1402,11 @@ EOJSON;
 				$tagName = self::NodeToHTML($child);				
 				switch ($action) :
 				case 'retain' :
-					FeedWordPress::diagnostic('gfi:capture:html', "HTML Parsing: ".str_repeat("===", $level+1)." Retaining whitelisted element [$tagName] (".json_encode($inFilter).")");
+					FeedWordPress::diagnostic('gfi:capture:htmltree', "HTML Parsing: ".str_repeat("===", $level+1)." Retaining whitelisted element [$tagName] (".json_encode($inFilter).")");
 					self::scrubHTMLElements($child, $outFilter, '*', $xpath, $level+1);
 					break;
 				case 'descend' :
-					FeedWordPress::diagnostic('gfi:capture:html', "HTML Parsing: ".str_repeat("===", $level+1)." Descending into greylisted element [$tagName] (".json_encode($inFilter).")");
+					FeedWordPress::diagnostic('gfi:capture:htmltree', "HTML Parsing: ".str_repeat("===", $level+1)." Descending into greylisted element [$tagName] (".json_encode($inFilter).")");
 
 					self::scrubHTMLElements($child, $outFilter, $inFilter, $xpath, $level+1);
 					if (count($child->childNodes) > 0) :
@@ -1417,7 +1417,7 @@ EOJSON;
 
 						foreach ($toBubble as $grandchild) :
 							$tagName = self::NodeToHTML($grandchild);
-							FeedWordPress::diagnostic('gfi:capture:html', "HTML Parsing: ".str_repeat("===", $level+2)." Bubbling up retained element [$tagName] (".json_encode($inFilter).")");
+							FeedWordPress::diagnostic('gfi:capture:htmltree', "HTML Parsing: ".str_repeat("===", $level+2)." Bubbling up retained element [$tagName] (".json_encode($inFilter).")");
 							$cGC = $grandchild->cloneNode(/*deep=*/ true);
 							$element->insertBefore($cGC, $child);
 						endforeach;
