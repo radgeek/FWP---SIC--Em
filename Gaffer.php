@@ -1037,6 +1037,10 @@ endforeach; ?></td>
 
 					foreach ($aElements as $sElement) :
 						if (strlen($sElement) > 0) :
+							if (self::isBreakElement($sElement)) :
+								break; // exit foreach
+							endif;
+
 							if ($sElement[0] != '/') :
 								$sElement = '//' . $sElement;
 							endif;
@@ -1307,11 +1311,31 @@ EOJSON;
 		return $tabs;
 	} /* GrabFeaturedImages::media_upload_tabs () */
 
+	static private function NodeToHTML (DOMNode $element) {
+		$tagName = $element->nodeName;
+		if (!is_null($element->attributes)) :
+			foreach ($element->attributes as $attrib) :
+				$tagName .= " " . $attrib->name . '="' . $attrib->value . '"';
+			endforeach;
+		endif;
+		return $tagName;
+	}
+	static private function isBreakElement ($s) {
+		if (preg_match('/^(\s*-){3,}$/', $s)) :
+			return true;
+		else :
+			return false;
+		endif;
+	}
+
 	static public function scrubHTMLElements(DOMNode $element, $outFilter, $inFilter, $xpath = null, $level = 0) {
 
 		if (!isset($element->ownerDocument) or is_null($element->ownerDocument)) :
 			return;
 		endif;
+
+		$tagName = self::NodeToHTML($element);
+		FeedWordPress::diagnostic('gfi:capture:html', "HTML Parsing: ".str_repeat("===", $level)." Considering children of element [{$tagName}]");
 
 		$children = $element->childNodes;
 
@@ -1324,18 +1348,24 @@ EOJSON;
 			foreach ($children as $child) :
 				$removed = false; $blackListed = 0;
 				foreach ($outFilter as $black) :
+					if (self::isBreakElement($black)) :
+						break; // exit foreach
+					endif;
 					$cEls = $xpath->query('self::'.$black, $child);
 					$blackListed += $cEls->length;
 				endforeach;
+
 				if ($blackListed > 0):
 					// Blacklisted element. Scrub this out and all of its children.
 					$removed = true;
 					$toRemove[] = $child;
-					FeedWordPress::diagnostic('gfi:capture:html', "HTML Parsing: Scrubbing blacklisted element [{$child->nodeName}] (".__METHOD__.")");
+
 				endif;
 			endforeach;
 
 			foreach ($toRemove as $child) :
+				$tagName = self::NodeToHTML($child);
+				FeedWordPress::diagnostic('gfi:capture:html', "HTML Parsing: ".str_repeat("===", $level+1)." Scrubbing blacklisted element [$tagName]");
 				$element->removeChild($child);
 				break;
 			endforeach;
@@ -1344,12 +1374,21 @@ EOJSON;
 		$children = $element->childNodes;
 		if (!is_null($children)) :
 			$toDo = array();
-			foreach ($element->childNodes as $child) :
-				if (
-					(is_string($inFilter) and '*' == $inFilter)
-					or (is_array($inFilter) and in_array(strtolower($child->nodeName), $inFilter))
-				) :
+			foreach ($children as $child) :
+				$whiteListed = 0;
+				if (is_string($inFilter) and '*' == $inFilter) :
+					$whiteListed = 1;
+				else :
+					foreach ($inFilter as $white) :
+						if (self::isBreakElement($white)) :
+							break; // exit foreach
+						endif;
+						$cEls = $xpath->query('self::'.$white, $child);
+						$whiteListed += $cEls->length;
+					endforeach;
+				endif;
 
+				if ($whiteListed > 0) :
 					// Whitelisted element. Allow this and all of its children EXCEPT for blacklisted elements.
 					$toDo[] = array("retain", $child);
 				else :
@@ -1359,11 +1398,16 @@ EOJSON;
 
 			foreach ($toDo as $pair) :
 				list($action, $child) = $pair;
+
+				$tagName = self::NodeToHTML($child);				
 				switch ($action) :
 				case 'retain' :
+					FeedWordPress::diagnostic('gfi:capture:html', "HTML Parsing: ".str_repeat("===", $level+1)." Retaining whitelisted element [$tagName] (".json_encode($inFilter).")");
 					self::scrubHTMLElements($child, $outFilter, '*', $xpath, $level+1);
 					break;
 				case 'descend' :
+					FeedWordPress::diagnostic('gfi:capture:html', "HTML Parsing: ".str_repeat("===", $level+1)." Descending into greylisted element [$tagName] (".json_encode($inFilter).")");
+
 					self::scrubHTMLElements($child, $outFilter, $inFilter, $xpath, $level+1);
 					if (count($child->childNodes) > 0) :
 						$toBubble = array();						
@@ -1372,6 +1416,8 @@ EOJSON;
 						endforeach;
 
 						foreach ($toBubble as $grandchild) :
+							$tagName = self::NodeToHTML($grandchild);
+							FeedWordPress::diagnostic('gfi:capture:html', "HTML Parsing: ".str_repeat("===", $level+2)." Bubbling up retained element [$tagName] (".json_encode($inFilter).")");
 							$cGC = $grandchild->cloneNode(/*deep=*/ true);
 							$element->insertBefore($cGC, $child);
 						endforeach;
