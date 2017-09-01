@@ -4,7 +4,7 @@ Plugin Name: FWP+: GAFFer (Grab All Fulltext & Feature images)
 Plugin URI: https://github.com/radgeek/FWP---SIC--Em
 Description: A FeedWordPress add-on that allows you to grab full-text contents and make a best guess at setting featured images for syndicated content.
 Author: Charles Johnson
-Version: 2017.0831
+Version: 2017.0901
 Author URI: http://projects.radgeek.com
 */
 
@@ -217,9 +217,9 @@ endforeach; ?></td>
 		"default-input-value" => 'default',
 		);
 
-		$rootElements = $page->setting('fwpgfi root elements', null, array("fallback" => false));
-		$filterOut = $page->setting('fwpgfi filter out', null, array("fallback" => false));
-		$filterIn = $page->setting('fwpgfi filter in', null, array("fallback" => false));
+		$rootElements = $page->setting('fwpgfi root elements', '', array("fallback" => false));
+		$filterOut = $page->setting('fwpgfi filter out', '', array("fallback" => false));
+		$filterIn = $page->setting('fwpgfi filter in', '', array("fallback" => false));
 
 ?>
 		<table class="edit-form narrow">
@@ -235,17 +235,17 @@ endforeach; ?></td>
 		?></td></tr>
 
 		<tr class="hide-if-js grab-full-text-advanced"><th scope="row"><?php _e('Parsing and Filtering HTML'); ?><td><h3>Look for full text in these container elements (XPath, one per line, in order):</h3>
-<textarea name="fwpgfi_root_elements" placeholder="<?php print esc_attr(FWPGFI_FULL_HTML_ROOT_ELEMENTS); ?>">
+<textarea name="fwpgfi_root_elements" placeholder="tags">
 <?php print esc_html($rootElements); ?>
 </textarea>
 
 <h3>Within a container element, include text and HTML contained within these content  elements:</h3>
-<textarea name="fwpgfi_filter_in" placeholder="<?php print esc_attr(FWPGFI_FULL_HTML_CONTENT_FILTER_IN); ?>">
+<textarea name="fwpgfi_filter_in" placeholder="tags">
 <?php print esc_html($filterIn); ?>
 </textarea>
 
 <h3>Exclude any content contained in these elements:</h3>
-<textarea name="fwpgfi_filter_out" placeholder="<?php print esc_attr(FWPGFI_FULL_HTML_CONTENT_FILTER_OUT); ?>">
+<textarea name="fwpgfi_filter_out" placeholder="tags">
 <?php print esc_html($filterOut); ?>
 </textarea>
 
@@ -453,15 +453,12 @@ endforeach; ?></td>
 			$page->update_setting('grab full html', $params['gfi_grab_full_html']);
 
 			$rootElements = preg_replace('/[\r\n]+/', "\n", trim($params['fwpgfi_root_elements']));
-			if (strlen($rootElements) == 0) : $rootElements = FWPGFI_FULL_HTML_ROOT_ELEMENTS; endif;
 			$page->update_setting('fwpgfi root elements', $rootElements);
 
 			$filterOut = preg_replace('/[\r\n]+/', "\n", trim($params['fwpgfi_filter_out']));
-			if (strlen($filterOut) == 0) : $filterOut = FWPGFI_FULL_HTML_CONTENT_FILTER_OUT; endif;
 			$page->update_setting('fwpgfi filter out', $filterOut);
 
 			$filterIn = preg_replace('/[\r\n]+/', "\n",trim($params['fwpgfi_filter_in']));
-			if (strlen($filterIn) == 0) : $filterIn = FWPGFI_FULL_HTML_CONTENT_FILTER_IN; endif;
 			$filterIn = $page->update_setting('fwpgfi filter in', $filterIn);
 
 			if ($page->for_default_settings()) :
@@ -1025,31 +1022,41 @@ endforeach; ?></td>
 					$oXPath = new DOMXpath($oDoc);
 					libxml_clear_errors();
 
-					$mainElements = $source->setting('fwpgfi root elements', 'fwpgfi_root_elements', FWPGFI_FULL_HTML_ROOT_ELEMENTS);
-					$aElements = array_map(function ($item) { return trim($item); }, explode("\n", $mainElements));
-					$outFilter = explode("\n", $source->setting('fwpgfi filter out', 'fwpgfi_filter_out', FWPGFI_FULL_HTML_CONTENT_FILTER_OUT)); 
-					$inFilter = $source->setting('fwpgfi filter in', 'fwpgfi_filter_in', FWPGFI_FULL_HTML_CONTENT_FILTER_IN);
+					$mainElements = trim($source->setting('fwpgfi root elements', 'fwpgfi_root_elements', '') . "\n" . FWPGFI_FULL_HTML_ROOT_ELEMENTS);
+					$aElements = array_values(array_filter(array_map('trim', preg_split('/[\r\n]+/', $mainElements))));
+
+					$outFilter = trim($source->setting('fwpgfi filter out', 'fwpgfi_filter_out', '') . "\n" . FWPGFI_FULL_HTML_CONTENT_FILTER_OUT);
+					$outFilter = array_values(array_filter(array_map('trim', preg_split('/[\r\n]+/', $outFilter))));
+
+					$inFilter = trim($source->setting('fwpgfi filter in', 'fwpgfi_filter_in', ""));
 					if ($inFilter != '*') :
-						$inFilter = explode("\n", $inFilter);
+						$inFilter = $inFilter . "\n" . FWPGFI_FULL_HTML_CONTENT_FILTER_IN;
+						$inFilter = array_values(array_filter(array_map('trim', preg_split('/[\r\n]+/', $inFilter))));
 					endif;
 
 					foreach ($aElements as $sElement) :
+						if (strlen($sElement) > 0) :
+							if ($sElement[0] != '/') :
+								$sElement = '//' . $sElement;
+							endif;
 
-						if ($sElement[0] != '/') :
-							$sElement = '//' . $sElement;
-						endif;
+							$cEls = $oXPath->query($sElement);
+							if ($cEls->length > 0) :
+								FeedWordPress::diagnostic('gfi:capture:html', "HTML Parsing: Found viable root element [$sElement] (from ".json_encode($aElements).")");
+								FeedWordPress::diagnostic('gfi:capture:html', "HTML Parsing: Scrubbing contents using blacklist ".json_encode($outFilter));
+								FeedWordPress::diagnostic('gfi:capture:html', "HTML Parsing: Scrubbing contents using whitelist ".json_encode($inFilter));
 
-						$cEls = $oXPath->query($sElement);
-						if ($cEls->length > 0) :
-							FeedWordPress::diagnostic('gfi:capture:html', "HTML Parsing: Found viable root element [$sElement] (".__METHOD__.")");
-							$data = '';
-							foreach ($cEls as $oEl) :
-								self::scrubHTMLElements($oEl, $outFilter, $inFilter);
-								$data .= self::DOMInnerHTML($oEl);
-							endforeach;
-							break; // exit foreach
+								$data = '';
+								foreach ($cEls as $oEl) :
+									self::scrubHTMLElements($oEl, $outFilter, $inFilter);
+									$data .= self::DOMInnerHTML($oEl);
+								endforeach;
+								break; // exit foreach
+							endif;
 						endif;
 					endforeach;
+
+					// Now wrap it in the characteristic HTML block element
 					$text = FWPGFI_FULL_HTML_PRE.$data.FWPGFI_FULL_HTML_POST;
 				endswitch;
 			endif;
