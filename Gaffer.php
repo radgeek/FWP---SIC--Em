@@ -9,16 +9,16 @@ Author URI: http://projects.radgeek.com
 */
 
 require_once(dirname(__FILE__).'/sicwebimage.class.php');
-
+define('FWPGFI_DEBUG_MODE', false);
 define('FWPGFI_CACHE_IMAGES_DEFAULT', 'no');
 define('FWPGFI_GRAB_FULL_HTML_DEFAULT', 'no');
 define('FWPGFI_PROCESS_POSTS_MAX', 70);
 define('FWPGFI_FULL_HTML_PRE', '<div class="feedwordpress-gaffer-full-text">');
 define('FWPGFI_FULL_HTML_POST', '</div>');
 define('FWPGFI_QUEUE_LABEL', 'GAFFer Post Processing Queue');
-define('FWPGFI_FULL_HTML_ROOT_ELEMENTS', "section[contains(@class,'postcontent')]\narticle[contains(@class, 'post-content')]\narticle//*[contains(@class,'entry-content')]\narticle//*[contains(@class,'entry')]\narticle\n*[contains(@class,'entry-content')]\n*[contains(@class, 'article-body') and .//p]\n*[contains(@class, 'article') and .//p]\n*[contains(@class, 'node-body') and .//p]\n*[contains(@class, 'content') and .//p]\n*[contains(@class, 'post') and .//p]\n*[contains(@class, 'text') and .//p]\n*[contains(@class, 'entry') and .//p]\n*[contains(@class, 'node') and .//p]\nmain\nbody\n*");
-define('FWPGFI_FULL_HTML_CONTENT_FILTER_OUT', "script\nstyle\nheader\nfooter\nform\n*[contains(@class, 'shareBar')]\n*[contains(@class, 'comments')]\n*[contains(@class, 'random-posts')]\n*[contains(@class, 'social-links')]\nnav\n*[contains(@class, 'menu')]\n*[./li[contains(@class, 'facebook')]]");
-define('FWPGFI_FULL_HTML_CONTENT_FILTER_IN', "h1\nh2\nh3\nh4\nh5\nh6\np\nhr\nbr\nul\nol\ndl\nblockquote\naddress\npre\ntable\nfigure\nfigcaption\nimg\naudio\nvideo\nembed\nobject\niframe\ncanvas");
+define('FWPGFI_FULL_HTML_ROOT_ELEMENTS', "div[@class='entry']\nsection[contains(@class,'postcontent')]\narticle[contains(@class, 'post-content')]\narticle//*[contains(@class,'entry-content')]\narticle//*[contains(@class,'entry')]\narticle//*[contains(@class,'body')]\narticle\n*[contains(@class,'entry-content')]\n*[contains(@class,'blog-single-content')]\n*[contains(@class, 'article-body') and .//p]\n*[contains(@class, 'post-body') and .//p]\n*[contains(@class, 'article') and .//p]\n*[contains(@class, 'node-body') and .//p]\n*[contains(@class, 'content') and .//p]\n*[contains(@class, 'post') and .//p]\n*[contains(@class, 'text') and .//p]\n*[contains(@class, 'entry') and .//p]\n*[contains(@class, 'node') and .//p]\nmain\nbody\n*");
+defines('FWPGFI_FULL_HTML_CONTENT_FILTER_OUT', "script\nstyle\nheader\nfooter\nform\n*[contains(@class, 'shareBar')]\n*[contains(@class, 'comments')]\n*[contains(@class, 'random-posts')]\n*[contains(@class, 'social-links')]\nnav\n*[contains(@class, 'menu')]\n*[./li[contains(@class, 'facebook')]]\n*[contains(@class, 'robots-nocontent'])\n*[contains(@class, 'sharedaddy')]");
+define('FWPGFI_FULL_HTML_CONTENT_FILTER_IN', "h2\nh3\nh4\nh5\nh6\np\ndiv\nspan\nhr\nbr\nul\nol\ndl\nblockquote\naddress\npre\ntable\nfigure\nfigcaption\nimg\naudio\nvideo\nembed\nobject\niframe\ncanvas");
 
 // Get the path relative to the plugins directory in which FWP is stored
 preg_match (
