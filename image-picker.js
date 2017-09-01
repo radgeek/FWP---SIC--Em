@@ -19,6 +19,16 @@ function send_to_editor(h) {
 
 jQuery(document).ready(function() {
 
+	jQuery('#grab-full-text-advanced-toggle-link').click(function (ev) {
+		ev.preventDefault();
+		jQuery('.grab-full-text-advanced').toggle(500);
+		if (jQuery('#grab-full-text-advanced-toggle-link').text() == 'Advanced Settings') {
+			jQuery('#grab-full-text-advanced-toggle-link').text('Hide Advanced Settings');
+		} else {
+			jQuery('#grab-full-text-advanced-toggle-link').text('Advanced Settings');
+		}
+		return false;
+	});
 	jQuery('#grab-feature-images-advanced-toggle-link').click(function (ev) {
 		ev.preventDefault();
 		jQuery('.grab-feature-images-advanced').toggle(500);
@@ -29,7 +39,8 @@ jQuery(document).ready(function() {
 		}
 		return false;
 	});
-	jQuery('form').submit(function () { jQuery('.grab-feature-images-advanced').show(0); return true; });
+
+	jQuery('form').submit(function () { jQuery('.grab-feature-images-advanced, .grab-full-text-advanced').show(0); return true; });
 
 	//jQuery("#gfi-default-featured-image").hide();
 	jQuery('<div style="margin-top: 5px; margin-bottom: 5px"><a href="media-upload.php?type=image&amp;sic_pick_feed_id=*&amp;TB_iframe=1" class="button thickbox-image-widget">Pick an image...</a> <a class="button thickbox-image-widget-remove" href="#">X Remove</a></div>').insertBefore(jQuery('#gfi-default-featured-image'));

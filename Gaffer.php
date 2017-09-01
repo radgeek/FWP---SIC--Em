@@ -4,7 +4,7 @@ Plugin Name: FWP+: GAFFer (Grab All Fulltext & Feature images)
 Plugin URI: https://github.com/radgeek/FWP---SIC--Em
 Description: A FeedWordPress add-on that allows you to grab full-text contents and make a best guess at setting featured images for syndicated content.
 Author: Charles Johnson
-Version: 2017.0820
+Version: 2017.0831
 Author URI: http://projects.radgeek.com
 */
 
@@ -16,9 +16,9 @@ define('FWPGFI_PROCESS_POSTS_MAX', 70);
 define('FWPGFI_FULL_HTML_PRE', '<div class="feedwordpress-gaffer-full-text">');
 define('FWPGFI_FULL_HTML_POST', '</div>');
 define('FWPGFI_QUEUE_LABEL', 'GAFFer Post Processing Queue');
-define('FWPGFI_FULL_HTML_ROOT_ELEMENTS', "article//*[@class='entry-content']\narticle//*[@class='entry']\narticle\nmain\nbody\n*");
-define('FWPGFI_FULL_HTML_CONTENT_FILTER_OUT', "script|style|header|footer|form");
-define('FWPGFI_FULL_HTML_CONTENT_FILTER_IN', "h3|h4|h5|h6|p|hr|br|ul|ol|dl|blockquote|address|pre|table|figure|figcaption|img|audio|video|embed|object|iframe|canvas");
+define('FWPGFI_FULL_HTML_ROOT_ELEMENTS', "section[contains(@class,'postcontent')]\narticle[contains(@class, 'post-content')]\narticle//*[contains(@class,'entry-content')]\narticle//*[contains(@class,'entry')]\narticle\n*[contains(@class,'entry-content')]\n*[contains(@class, 'article-body') and .//p]\n*[contains(@class, 'article') and .//p]\n*[contains(@class, 'node-body') and .//p]\n*[contains(@class, 'content') and .//p]\n*[contains(@class, 'post') and .//p]\n*[contains(@class, 'text') and .//p]\n*[contains(@class, 'entry') and .//p]\n*[contains(@class, 'node') and .//p]\nmain\nbody\n*");
+define('FWPGFI_FULL_HTML_CONTENT_FILTER_OUT', "script\nstyle\nheader\nfooter\nform\n*[contains(@class, 'shareBar')]\n*[contains(@class, 'comments')]\n*[contains(@class, 'random-posts')]\n*[contains(@class, 'social-links')]\nnav\n*[contains(@class, 'menu')]\n*[./li[contains(@class, 'facebook')]]");
+define('FWPGFI_FULL_HTML_CONTENT_FILTER_IN', "h1\nh2\nh3\nh4\nh5\nh6\np\nhr\nbr\nul\nol\ndl\nblockquote\naddress\npre\ntable\nfigure\nfigcaption\nimg\naudio\nvideo\nembed\nobject\niframe\ncanvas");
 
 // Get the path relative to the plugins directory in which FWP is stored
 preg_match (
@@ -33,6 +33,23 @@ else : // Something went wrong. Let's just guess.
 	$gfi_path = 'fwp-gaffer';
 endif;
 
+// to do this well, we need to use cron-based updates, and to check in frequently
+function fwpgfi_add_every6mins ($schedules) {
+	// add 'every6mins' to the existing set
+	$schedules['every6mins'] = array(
+		'interval' => 360,
+		'display' => 'Every 6 Minutes',
+	);
+	return $schedules;
+}
+add_filter('cron_schedules', 'fwpgfi_add_every6mins');
+
+register_deactivation_hook(__FILE__, 'fwpgfi_deactivation');
+
+function fwpgfi_deactivation() {
+	wp_clear_scheduled_hook('fwpgfi_scheduled_update');
+}
+
 class GrabFeaturedImages {
 	var $name;
 	var $upload;
@@ -40,14 +57,17 @@ class GrabFeaturedImages {
 
 	public function __construct () {
 		$this->name = strtolower(get_class($this));
-		add_filter('syndicated_post', array(&$this, 'process_post'), 10, 2);
-		add_filter('feedwordpress_update_complete', array(&$this, 'process_full_html'), -2000, 1);
-		add_filter('feedwordpress_update_complete', array(&$this, 'process_captured_images'), -1000, 1);
-		add_action('feedwordpress_admin_page_syndication_meta_boxes', array(&$this, 'add_queue_box'));
-		add_action('feedwordpress_admin_page_posts_meta_boxes', array(&$this, 'add_settings_box'));
-		add_action('feedwordpress_admin_page_posts_save', array(&$this, 'save_settings'), 10, 2);
-		add_filter('feedwordpress_diagnostics', array(&$this, 'diagnostics'), 10, 2);
+		add_filter('syndicated_post', array($this, 'process_post'), 10, 2);
+		add_filter('feedwordpress_update_complete', array($this, 'process_full_html'), -2000, 1);
+		add_filter('feedwordpress_update_complete', array($this, 'process_captured_images'), -1000, 1);
+		add_action('feedwordpress_admin_page_syndication_meta_boxes', array($this, 'add_queue_box'));
+		add_action('feedwordpress_admin_page_posts_meta_boxes', array($this, 'add_settings_box'));
+		add_action('feedwordpress_admin_page_posts_save', array($this, 'save_settings'), 10, 2);
+		add_filter('feedwordpress_diagnostics', array($this, 'diagnostics'), 10, 2);
 		
+		add_action('feedwordpress_feedfinder_form', array($this, 'feedwordpress_feedfinder_form'), 10, 4);
+		add_action('feedwordpress_admin_switchfeed', array($this, 'feedwordpress_admin_switchfeed'), 10, 2);
+
 		// If user opts for it, put a gallery at the end of syndicated posts
 		add_filter('the_content', array(&$this, 'the_content'), 200000, 2);
 		
@@ -56,7 +76,40 @@ class GrabFeaturedImages {
 			add_action('admin_init', array($this, 'admin_init'), -10);
 			add_action('admin_init', array($this, 'fix_async_upload_image'), 10);
 		endif;
+
+		add_action('init', array($this, 'init'), 10);
+		add_action('fwpgfi_scheduled_update', array($this, 'scheduled_update'), 10);
 	} /* GrabFeaturedImages::__construct() */
+
+	public function init () {
+		if (! wp_next_scheduled('fwpgfi_scheduled_update') ) :
+			wp_schedule_event(time()+360, 'every6mins', 'fwpgfi_scheduled_update');
+		endif;
+	} /* GrabFeaturedImages::init() */
+
+	public function scheduled_update () {
+		// Construct our magic update URL
+		$url = site_url();
+		if (strpos($url, '?') == false) :
+			$sep = '?';
+		else :
+			$sep = '&';
+		endif;
+		$url = $url . $sep . 'update_feedwordpress=1';
+
+		// Set up headers and timeout
+		$headers = array();
+		$headers['Connection'] = 'close';
+		
+		$timeout = 300;
+
+		// Now send an HTTP request to ping the magic update URL
+		$http = wp_remote_request($url, array(
+			'headers' => $headers,
+			'timeout' => $timeout,
+		));
+		
+	} /* GrabFeaturedImages::scheduled_update() */
 
 	////////////////////////////////////////////////////////////////////////////
 	// SETTINGS UI /////////////////////////////////////////////////////////////
@@ -163,27 +216,53 @@ endforeach; ?></td>
 		"global-setting-default" => FWPGFI_GRAB_FULL_HTML_DEFAULT,
 		"default-input-value" => 'default',
 		);
+
+		$rootElements = $page->setting('fwpgfi root elements', null, array("fallback" => false));
+		$filterOut = $page->setting('fwpgfi filter out', null, array("fallback" => false));
+		$filterIn = $page->setting('fwpgfi filter in', null, array("fallback" => false));
+
 ?>
 		<table class="edit-form narrow">
 		<tbody>
 		<tr><th scope="row"><?php _e('Retrieve full HTML:'); ?></th>
 		<td><p>When a syndicated post includes a short text description and a
-		link to the full story at <code>http://example.com/page/1</code>,
+		link to the full story at <code>http://example.com/page/1</code>,</p>
 		<?php
 			$page->setting_radio_control(
 				'grab full html', 'grab_full_html',
 				$grabFullHTMLSelector, $gfhParams
 			);
 		?></td></tr>
+
+		<tr class="hide-if-js grab-full-text-advanced"><th scope="row"><?php _e('Parsing and Filtering HTML'); ?><td><h3>Look for full text in these container elements (XPath, one per line, in order):</h3>
+<textarea name="fwpgfi_root_elements" placeholder="<?php print esc_attr(FWPGFI_FULL_HTML_ROOT_ELEMENTS); ?>">
+<?php print esc_html($rootElements); ?>
+</textarea>
+
+<h3>Within a container element, include text and HTML contained within these content  elements:</h3>
+<textarea name="fwpgfi_filter_in" placeholder="<?php print esc_attr(FWPGFI_FULL_HTML_CONTENT_FILTER_IN); ?>">
+<?php print esc_html($filterIn); ?>
+</textarea>
+
+<h3>Exclude any content contained in these elements:</h3>
+<textarea name="fwpgfi_filter_out" placeholder="<?php print esc_attr(FWPGFI_FULL_HTML_CONTENT_FILTER_OUT); ?>">
+<?php print esc_html($filterOut); ?>
+</textarea>
+
+		</td></tr>
+
 		<?php
 		if ($page->for_default_settings()) :
 			$value = $this->process_posts_max();
 		?>
-		<tr><th scope="row"><?php _e('Queued web requests:'); ?></th>
+		<tr class="hide-if-js grab-full-text-advanced"><th scope="row"><?php _e('Queued web requests:'); ?></th>
 		<td><p>Process <input type="number" min="-1" step="1" size="4" value="<?php print esc_attr($value); ?>" name="fwpgfi_process_posts_max" /> queued requests per update cycle.</p>
 		<div class="setting-description">If you start seeing long delays between when posts are syndicated and when their full text is retrieved &#8212; or if posts start piling up in the <?php print FWPGFI_QUEUE_LABEL; ?> &#8212; you may need to adjust this setting higher. If you start noticing that update processes take too long to complete, you may need to adjust this setting lower. Use a value of <code>-1</code> to force FWP+: GAFFer to process <em>all</em> queued requests during <em>every</em> update cycle.</div>
 		</td></tr>
 		<?php endif; ?>
+
+		<tr id="grab-full-text-advanced-toggle" class="hide-if-no-js"><th></th><td><a href="#" id="grab-full-text-advanced-toggle-link">Advanced Settings</a></td></tr>
+
 		
 		</tbody>
 		</table>
@@ -373,6 +452,18 @@ endforeach; ?></td>
 
 			$page->update_setting('grab full html', $params['gfi_grab_full_html']);
 
+			$rootElements = preg_replace('/[\r\n]+/', "\n", trim($params['fwpgfi_root_elements']));
+			if (strlen($rootElements) == 0) : $rootElements = FWPGFI_FULL_HTML_ROOT_ELEMENTS; endif;
+			$page->update_setting('fwpgfi root elements', $rootElements);
+
+			$filterOut = preg_replace('/[\r\n]+/', "\n", trim($params['fwpgfi_filter_out']));
+			if (strlen($filterOut) == 0) : $filterOut = FWPGFI_FULL_HTML_CONTENT_FILTER_OUT; endif;
+			$page->update_setting('fwpgfi filter out', $filterOut);
+
+			$filterIn = preg_replace('/[\r\n]+/', "\n",trim($params['fwpgfi_filter_in']));
+			if (strlen($filterIn) == 0) : $filterIn = FWPGFI_FULL_HTML_CONTENT_FILTER_IN; endif;
+			$filterIn = $page->update_setting('fwpgfi filter in', $filterIn);
+
 			if ($page->for_default_settings()) :
 				update_option('fwpgfi_process_posts_max', $params['fwpgfi_process_posts_max']);
 
@@ -380,6 +471,61 @@ endforeach; ?></td>
 
 		endif;
 	} /* GrabFeaturedImages::save_settings () */
+
+
+	public function feedwordpress_feedfinder_form ($f, $post, $link, $for_feed_settings) {
+		$probablyNotFullHTML = false;
+
+		// Does this post have a distinct excerpt?
+		if (is_object($post->entry)) :
+			$excerpt = $post->entry->get_description();
+			$content = $post->content();
+
+			// If these are the same, and there are no HTML tags, there's a high
+			// probability that this is not a full HTML feed.
+			if ($excerpt == $content) :
+				$probablyNotFullHTML = (strip_tags($excerpt) == $excerpt);
+			endif;
+
+			// If the average post is very short (let's say < 1,000 characters
+			// without tags) then it probably is not a full HTML feed
+			$sumLen = 0.0;
+			$aPosts = $post->link->live_posts();
+			foreach ($aPosts as $oItem) :
+				$sumLen += 1.0*strlen(strip_tags($oItem->get_content()));
+			endforeach;
+			$avgLen = ($sumLen / count($aPosts));
+			if ($avgLen < 1000) :
+				$probablyNotFullHTML = true;
+			endif;
+		endif;
+
+		if ($probablyNotFullHTML) :
+?>
+			<div style="background-color: #ffd0d0; padding: 0em 1em 1em 1em; width: 50%;">
+			<p><strong>Full HTML?</strong> Some features of this feed seem to indicate that this feed may be carrying only excerpts and not the full HTML of syndicated posts.</p>
+			<p>When a syndicated post includes a short text description and a 	link to the full story at <code>http://example.com/page/1</code>,</p>
+			<ul class="options">
+			<li><label style="font-weight: normal"><input name="gfi_grab_full_html" value="no" type="radio">
+			<strong>Use contents from feed:</strong> Keep the contents or excerpt provided by the feed</label></li>
+			<li><label style="font-weight: normal"><input name="gfi_grab_full_html" value="yes" type="radio">
+			<strong>Retrieve full text from web:</strong> Attempt to retrieve full text from <code>http://example.com/page/1</code>, using the included link</label></li>
+			<li><label style="font-weight: normal"><input name="gfi_grab_full_html" value="default" type="radio" checked="checked"> Use the site-wide default setting.</li>
+			</ul> <!-- class="options" -->
+			</div>
+<?php
+		endif;
+
+	}
+
+	public function feedwordpress_admin_switchfeed ($feed, $link) {
+		if (is_object($link)) :
+			if (!is_null(MyPHP::post('gfi_grab_full_html'))) :
+				$link->update_setting('grab full html', MyPHP::post('gfi_grab_full_html'));
+				$link->save_settings();
+			endif;
+		endif;
+	}
 
 	////////////////////////////////////////////////////////////////////////////
 	// FUNCTIONALITY ///////////////////////////////////////////////////////////
@@ -544,21 +690,24 @@ endforeach; ?></td>
 	 */
 	public function process_full_html ($delta) {
 		global $post, $wpdb;
-		
+
 		// Let's do this.
 		$q = new WP_Query(array(
 		'meta_key' => '_syndicated_full_html_capture',
 		'posts_per_page' => $this->process_posts_max(),
 		'order' => 'ASC',
+		'orderby' => 'rand',
 		));
-		
+
 		while ($q->have_posts()) : $q->the_post();
 			$this->post = $post;
+
 			$zapit = false;
 			$captured_from = array();
 			
 			$failed_from = get_post_custom_values('html capture failed');
 			$urls = get_post_custom_values('_syndicated_full_html_capture');
+
 			$source = get_syndication_feed_object($post->ID);
 
 			$post_images = array();
@@ -568,6 +717,7 @@ endforeach; ?></td>
 				
 				foreach ($urls as $url) :
 					if ($url) :
+
 						$post_content = $this->grab_text($url, $post->ID);
 						
 						$ok = false;
@@ -877,10 +1027,10 @@ endforeach; ?></td>
 
 					$mainElements = $source->setting('fwpgfi root elements', 'fwpgfi_root_elements', FWPGFI_FULL_HTML_ROOT_ELEMENTS);
 					$aElements = array_map(function ($item) { return trim($item); }, explode("\n", $mainElements));
-					$outFilter = explode("|", $source->setting('fwpgfi filter out', 'fwpgfi_filter_out', FWPGFI_FULL_HTML_CONTENT_FILTER_OUT));
+					$outFilter = explode("\n", $source->setting('fwpgfi filter out', 'fwpgfi_filter_out', FWPGFI_FULL_HTML_CONTENT_FILTER_OUT)); 
 					$inFilter = $source->setting('fwpgfi filter in', 'fwpgfi_filter_in', FWPGFI_FULL_HTML_CONTENT_FILTER_IN);
 					if ($inFilter != '*') :
-						$inFilter = explode("|", $inFilter);
+						$inFilter = explode("\n", $inFilter);
 					endif;
 
 					foreach ($aElements as $sElement) :
@@ -1149,15 +1299,31 @@ EOJSON;
 		return $tabs;
 	} /* GrabFeaturedImages::media_upload_tabs () */
 
-	static public function scrubHTMLElements(DOMNode $element, $outFilter, $inFilter, $level = 0) {
+	static public function scrubHTMLElements(DOMNode $element, $outFilter, $inFilter, $xpath = null, $level = 0) {
+
+		if (!isset($element->ownerDocument) or is_null($element->ownerDocument)) :
+			return;
+		endif;
+
 		$children = $element->childNodes;
+
+		if (is_null($xpath)) :
+			$xpath = new DOMXpath($element->ownerDocument);
+		endif;
 
 		if (!is_null($children)) :
 			$toRemove = array();
 			foreach ($children as $child) :
-				if (in_array(strtolower($child->nodeName), $outFilter)) :
+				$removed = false; $blackListed = 0;
+				foreach ($outFilter as $black) :
+					$cEls = $xpath->query('self::'.$black, $child);
+					$blackListed += $cEls->length;
+				endforeach;
+				if ($blackListed > 0):
 					// Blacklisted element. Scrub this out and all of its children.
+					$removed = true;
 					$toRemove[] = $child;
+					FeedWordPress::diagnostic('gfi:capture:html', "HTML Parsing: Scrubbing blacklisted element [{$child->nodeName}] (".__METHOD__.")");
 				endif;
 			endforeach;
 
@@ -1187,10 +1353,10 @@ EOJSON;
 				list($action, $child) = $pair;
 				switch ($action) :
 				case 'retain' :
-					self::scrubHTMLElements($child, $outFilter, '*', $level+1);
+					self::scrubHTMLElements($child, $outFilter, '*', $xpath, $level+1);
 					break;
 				case 'descend' :
-					self::scrubHTMLElements($child, $outFilter, $inFilter, $level+1);
+					self::scrubHTMLElements($child, $outFilter, $inFilter, $xpath, $level+1);
 					if (count($child->childNodes) > 0) :
 						$toBubble = array();						
 						foreach ($child->childNodes as $grandchild) :
@@ -1224,4 +1390,5 @@ EOJSON;
 
 
 $gfiAddOn = new GrabFeaturedImages;
+
 
