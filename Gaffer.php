@@ -104,11 +104,12 @@ class GrabFeaturedImages {
 		$timeout = 300;
 
 		// Now send an HTTP request to ping the magic update URL
-		$http = wp_remote_request($url, array(
-			'headers' => $headers,
-			'timeout' => $timeout,
-		));
-		
+		if (!FWPGFI_DEBUG_MODE) :		
+			$http = wp_remote_request($url, array(
+				'headers' => $headers,
+				'timeout' => $timeout,
+			));
+		endif;
 	} /* GrabFeaturedImages::scheduled_update() */
 
 	////////////////////////////////////////////////////////////////////////////
