@@ -638,8 +638,7 @@ class SicEm {
 		$imgBits = new SicWebImage($url, $params, $http);
 		
 		if ($imgBits->is_ok() and $imgBits->is_image()) :
-			// Check whether our size filters or MIME 
-		ts filter it out
+			// Check whether our size filters or MIME constraints filter it out
 			$imagesize = $imgBits->size();
 			if (!is_null($imagesize)) :
 				$minWidth = (isset($args['min width']) ? $args['min width'] : 0);
@@ -661,7 +660,7 @@ class SicEm {
 			
 			// Apply (if applicable) crop and resize settings
 			if ($p['crop'] or $p['resize']) :
-				imgBits->constrain($p['crop'], $p['resize']);
+				$imgBits->constrain($p['crop'], $p['resize']);
 			endif;
 
 			if ($imgBits->is_image()) :
