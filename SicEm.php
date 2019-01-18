@@ -4,7 +4,7 @@ Plugin Name: FWP+: SIC 'Em (Syndicated Image Capture)
 Plugin URI: https://github.com/radgeek/FWP---SIC--Em
 Description: A FeedWordPress filter that locally caches images in the feeds you syndicate. Images are stored in your WordPress uploads directory.
 Author: Charles Johnson
-Version: 2017.0305
+Version: 2017.0306
 Author URI: http://projects.radgeek.com
 */
 
@@ -339,39 +339,42 @@ class SicEm {
 			if (is_syndicated()) :				
 				$source = get_syndication_feed_object($post->ID);
 
-				$sfi = $source->setting('sicem strip featured image', 'sicem_strip_featured_image', 'no');
-				switch ($sfi) :
-				case 'yes' :
-					$thumbId = get_post_thumbnail_id($post->ID);
-					if (!!$thumbId) :
-						$feat_img = wp_get_attachment_url($thumbId);
-						$find_url = preg_quote($feat_img);
-						$content = preg_replace(
-							':(<img \s+ [^>]*src=[^>]*)'.$find_url.'([^>]*>):ix',
-							/*blank it out*/ '',
-							$content
-						);
-					endif;
-					break;
-				case 'no' :
-				default :
-					// NOOP
-				endswitch;
+				// added check for return object
+				if ( is_object($source) ) :
+					$sfi = $source->setting('sicem strip featured image', 'sicem_strip_featured_image', 'no');
+					switch ($sfi) :
+					case 'yes' :
+						$thumbId = get_post_thumbnail_id($post->ID);
+						if (!!$thumbId) :
+							$feat_img = wp_get_attachment_url($thumbId);
+							$find_url = preg_quote($feat_img);
+							$content = preg_replace(
+								':(<img \s+ [^>]*src=[^>]*)'.$find_url.'([^>]*>):ix',
+								/*blank it out*/ '',
+								$content
+							);
+						endif;
+						break;
+					case 'no' :
+					default :
+						// NOOP
+					endswitch;
 				
-				$ig = $source->setting('sicem insert gallery', 'sicem_insert_gallery', 'no');
-				switch ($ig) :
-				case 'before' :
-					$content = do_shortcode('[gallery]')."\n\n".$content;
-					break;
-				case 'after' :
-					$content = $content."\n\n".do_shortcode('[gallery]');
-					break;
+					$ig = $source->setting('sicem insert gallery', 'sicem_insert_gallery', 'no');
+					switch ($ig) :
+					case 'before' :
+						$content = do_shortcode('[gallery]')."\n\n".$content;
+						break;
+					case 'after' :
+						$content = $content."\n\n".do_shortcode('[gallery]');
+						break;
 					
-				// Leave it.
-				case 'no' :
-				default :
-					// NOOP
-				endswitch;
+					// Leave it.
+					case 'no' :
+					default :
+						// NOOP
+					endswitch;
+				endif;
 			endif;
 		endif;
 		
