@@ -662,7 +662,9 @@ class SicEm {
 			endif;
 			
 			// Apply (if applicable) crop and resize settings
-			$imgBits->constrain($p['crop'], $p['resize']);
+			if ($p['crop'] or $p['resize']) :
+				$imgBits->constrain($p['crop'], $p['resize']);
+			endif;
 
 			if ($imgBits->is_image()) :
 				$attach_id = $imgBits->upload(/*attach_to=*/ $to);
